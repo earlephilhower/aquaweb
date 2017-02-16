@@ -19,8 +19,9 @@ It emulates a LCD controller and a SpaLink control panel on the web
 interface as well as the RS485 bus.
 
 Install and run it from /etc/local.rc on a RaspberryPi and go to:
-* LCD Controller:  http://<raspi>/
-* SpaLink:         http://<raspi>/spalink.html
+* LCD Controller:  http://raspi/
+* SpaLink:         http://raspi/spalink.html
+(where raspi is replaced with your RaspberryPi's IP or hostname)
 
 There is no authentication, so anyone with access to your network has
 **unrestricted access**.
