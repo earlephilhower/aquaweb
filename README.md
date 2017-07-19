@@ -10,7 +10,14 @@ Control Jandy Aqualink via a web interface from anywhere in the world
 * I AM NOT ASSOCIATED WITH JANDY OR RELATED COMPANIES
 
 This Python script allows control of Jandy Aqualink pools with remotes
-via a web interface.  
+via a web interface.  Your existing setup needs to already have the 
+old-style square remote or SpaLink installed.
+
+# Remote Image
+![Square Remote](https://github.com/earlephilhower/aquaweb/blob/master/remote.jpg)
+
+# SpaLink Image
+![SpaLink Remote](https://github.com/earlephilhower/aquaweb/blob/master/spalink.jpg)
 
 You will need a USB RS485 interface, a Raspberry Pi, and either a wireless
 or wired connection to your home network.
@@ -18,9 +25,15 @@ or wired connection to your home network.
 It emulates a LCD controller and a SpaLink control panel on the web
 interface as well as the RS485 bus.
 
+# Web Interface
+![Web Interface](https://github.com/earlephilhower/aquaweb/blob/master/remoteweb.jpg)
+
+# SpaLink Web Interface
+![SpaLink Web](https://github.com/earlephilhower/aquaweb/blob/master/spalinkweb.jpg)
+
 Install and run it from /etc/local.rc on a RaspberryPi and go to:
 * LCD Controller:  http://raspi/
-* SpaLink:         http://raspi/spalink.html
+* SpaLink:         http://raspi/spa.html
 (where raspi is replaced with your RaspberryPi's IP or hostname)
 
 There is no authentication, so anyone with access to your network has
