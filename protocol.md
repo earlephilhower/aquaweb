@@ -21,16 +21,16 @@ back a single keypress each time they receive new data.
 The wire format is as described much better than at TroubleFreePool.
 
 ## Protocol Sequence
-JANDY sends: <id><command><data><checksum>
+JANDY sends: \[id\]\[command\]\[data\]\[checksum\]
 
-<id> is your device ID, <command> can be anything like "clear screen" or 
-"hello" or "scroll up", <data> is variable and optional (often contains
+\[id\] is your device ID, \[command\] can be anything like "clear screen" or 
+"hello" or "scroll up", \[data\] is variable and optional (often contains
 the ASCII strings to display).
 
 You then have XXX ms to respond with an ACK and potentially one-byte payload
 containing a keypress, as so:
 
-(REMOTE/SPALINK SENDS): 8b<keycode> (where keycode==0 if no buttons pressed)
+(REMOTE/SPALINK SENDS): 8b\[keycode\] (where keycode==0 if no buttons pressed)
 
 The keycode is a binary-encoded version, so you need to identify the exact
 pressed buttons.
@@ -63,33 +63,33 @@ of "writeline" commands to populate all rows.
 My remote ID is "40" but there may be up to 4 from "40" to "43" active.
 
 ### Square Remote Commands
-09<optional?>: CLEARSCREEN
+09\[optional?\]: CLEARSCREEN
 * I have seen an optional data byte, but it doesn't seem to be needed to work properly.
 * Clears the invert region
 
-0f<start><end><direction>: SCROLLSCREEN
-* If direction == ff => scroll up lines from [start, end]. Clear out the starting line.
-* If direction == 01 => scroll down lines from [start, end]. Clear out the ending line.
+0f\[start\]\[end\]\[direction\]: SCROLLSCREEN
+* If direction == ff =\] scroll up lines from [start, end]. Clear out the starting line.
+* If direction == 01 =\] scroll down lines from [start, end]. Clear out the ending line.
 
-04<line><byte1><byte2>...00 : WRITELINE
-* Clear <line> then write the byte sequence to it (already ASCII encoded)
+04\[line\]\[byte1\]\[byte2\]...00 : WRITELINE
+* Clear \[line\] then write the byte sequence to it (already ASCII encoded)
 
 00: PROBE/HANDSHAKE
 05: PROBE/HANDSHAKE
 * Return an ACK to tell the JANDY controller you're present and ready to accept commands.
 
-08<line> : INVERTLINE
-* Set the entire screen <line> to inverted
+08\[line\] : INVERTLINE
+* Set the entire screen \[line\] to inverted
 
-10<line><startchar><endchar>: INVERTCHARS
-* Set the characters from <startchar> to <endchar> on <line> to inverted
+10\[line\]\[startchar\]\[endchar\]: INVERTCHARS
+* Set the characters from \[startchar\] to \[endchar\] on \[line\] to inverted
 
 And that's all I've seen, really.  It's enough to display all menus and update all
 settings like clock and schedules.
 
 ### Square Remote ACK/keypress values
 When a button is pressed you need to record that fact and wait for a message back
-to you.  The JANDY main unit will send periodic HANDSHAKE messages (>1 per second
+to you.  The JANDY main unit will send periodic HANDSHAKE messages (\]1 per second
 in my experience) so there will be some lag, but it's boundd.
 
 Once you get a message directed to you, any message at all, you send an ACK (8b)
