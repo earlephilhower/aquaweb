@@ -2,6 +2,7 @@
 # coding=utf-8
 """Simulates AqualinkRS square remote and spa remote with a RS485 interface."""
 
+import argparse
 import string
 import serial
 import struct
@@ -16,7 +17,7 @@ import cgi
 
 # Configuration
 
-RS485Device = "/dev/rs485"        # RS485 serial device to be used
+RS485Device = "/dev/ttyUSB0"        # RS485 serial device to be used
 debugData = False
 debugRaw = False
 
@@ -28,8 +29,6 @@ ETX = '\x03'
 
 masterAddr = '\x00'          # address of Aqualink controller
 last_log = ""
-ID = "40"
-SPAID = "20"
 
 
 INDEXHTML = """
@@ -304,6 +303,8 @@ class Spa(object):
     lock = None
     nextAck = "00"
     status = {}
+    ID = "20"
+    ACK = "00"
 
     def __init__(self):
         self.screen = "---"
@@ -313,7 +314,7 @@ class Spa(object):
 
     def sendAck(self, i):
         """Tell controller we got messag, including keypresses in response."""
-        ackstr = "00" + self.nextAck
+        ackstr = self.ACK + self.nextAck
 #	print "SPACK: "+ackstr
         i.sendMsg((chr(0), chr(1), ackstr.decode("hex")))
         self.nextAck = "00"
@@ -420,6 +421,8 @@ class Screen(object):
     END = '\033[0m'
     lock = None
     nextAck = "00"
+    ACK = "8b"
+    ID = "40"
 
     def __init__(self):
         """Set up the instance"""
@@ -535,7 +538,7 @@ class Screen(object):
 
     def sendAck(self, i):
         """Controller talked to us, send back our last keypress."""
-        ackstr = "8b" + self.nextAck
+        ackstr = self.ACK + self.nextAck
         i.sendMsg( (chr(0), chr(1), ackstr.decode("hex")) )
         self.nextAck = "00"
 
@@ -630,9 +633,10 @@ class Interface(object):
         add a small delay to avoid CPU hogging"""
         try:
             if not os.path.exists(RS485Device):
-                time.sleep(1)
+                print 'Serial port \'' + RS485Device + '\' not found.\n'
+                sys.exit(-1)
             self.port = serial.Serial(RS485Device, baudrate=9600, 
-                                  bytesize=serial.SEVENBITS, 
+                                  bytesize=serial.EIGHTBITS, 
                                   parity=serial.PARITY_NONE, 
                                   stopbits=serial.STOPBITS_ONE,
                                   timeout=0.1)
@@ -735,12 +739,37 @@ class Interface(object):
             self.debugRawMsg = ""
 
 
+def parseArgs():
+    parser = argparse.ArgumentParser( formatter_class=argparse.RawDescriptionHelpFormatter,
+    description="A Python daemon to present a web interface for Jandy pool controls.",
+    epilog="Requirements:\n* RS485 interface (default = /dev/ttyUSB0)* Jandy remote PDA or OneLink Controller")
+    parser.add_argument("--device", "-d", dest = "device", default="/dev/ttyUSB0", 
+        help="RS485 device, default=dev/ttyUSB0", required=False)
+    parser.add_argument("--spalink", "-s", dest="spalink", action='store_true',
+        help="Enable a SPALINK emulator at http://localhost/spa.html", default=False,
+        required=False)
+    parser.add_argument("--aqualink", "-a", dest="aqualink", action='store_true',
+        help="Enable a AQUALINK emulator at http://localhost/", default=False, required=False)
+    args = parser.parse_args()
+    if not os.path.exists( args.device ):
+        print "ERROR: Unable to open RS485 device: " + args.device + "\n"
+        sys.exit(2)
+    return args
+
 def main():
+    args = parseArgs()
+    RS485Device = args.device
+ 
     """Start the listener for a screen and spa, run webserver."""
-    print "Creating screen emulator..."
-    screen = Screen()
-    print "Creating spa emulator..."
-    spa = Spa()
+    if args.aqualink:
+        print "Creating screen emulator..."
+        screen = Screen()
+    if args.spalink:
+        print "Creating spa emulator..."
+        spa = Spa()
+    if (not args.spalink) and (not args.aqualink):
+        print "ERROR: Please specify one or more interfaces to emulate."
+        sys.exit(-1)
 
     print "Creating RS485 port..."
     i = Interface("RS485")
@@ -752,11 +781,12 @@ def main():
     while True:
         ret = i.readMsg()
 #        print "ATTN: "+ret['dest'];
-        if ret['dest'] == ID:
-            screen.processMessage(ret, i)
-        elif ret['dest'] == SPAID:
-            spa.processMessage(ret, i)
-
+        if args.aqualink:
+            if ret['dest'] == screen.ID:
+                screen.processMessage(ret, i)
+        if args.spalink:
+            if ret['dest'] == spa.ID:
+                spa.processMessage(ret, i)
 
 if __name__ == "__main__":
     main()
