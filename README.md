@@ -11,10 +11,13 @@ Control Jandy Aqualink via a web interface from anywhere in the world
 
 This Python script allows control of Jandy Aqualink pools with remotes
 via a web interface.  Your existing setup needs to already have the 
-old-style square remote or SpaLink installed.
+new-style PDA, old-style square remote or SpaLink installed.
 
-# Remote Image
+# Square Remote Image
 ![Square Remote](https://github.com/earlephilhower/aquaweb/blob/master/remote.jpg)
+
+# PDA Remote Image
+![PDA Remote](https://github.com/earlephilhower/aquaweb/blob/master/pda.jpg)
 
 # SpaLink Image
 ![SpaLink Remote](https://github.com/earlephilhower/aquaweb/blob/master/spalink.jpg)
@@ -25,8 +28,11 @@ or wired connection to your home network.
 It emulates a LCD controller and a SpaLink control panel on the web
 interface as well as the RS485 bus.
 
-# Web Interface
+# Square Remote Web Interface
 ![Web Interface](https://github.com/earlephilhower/aquaweb/blob/master/remoteweb.jpg)
+
+# PDA Remote Web Interface
+![PDA Interface](https://github.com/earlephilhower/aquaweb/blob/master/pdascreen.jpg)
 
 # SpaLink Web Interface
 ![SpaLink Web](https://github.com/earlephilhower/aquaweb/blob/master/spalinkweb.jpg)
@@ -43,6 +49,7 @@ Some of the RS485 protocol routine was borrowed from
   https://github.com/ericbuehl/pyaqualink
 and some code on the excellent Trouble Free Pool forums:
   http://www.troublefreepool.com/threads/27391-Control-your-Jandy-equipment-from-your-PC-with-a-15-adapter
+The PDA style codes were uncovered by @johnnytaco.
 
 -Earle F. Philhower, III
  earlephilhower@yahoo.com

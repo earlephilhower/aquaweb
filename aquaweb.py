@@ -30,18 +30,14 @@ ETX = '\x03'
 masterAddr = '\x00'          # address of Aqualink controller
 last_log = ""
 
-
-INDEXHTML = """
-<html>
-<head>
-<title>Pool Controller</title>
+JAVASCRIPT = """
 <script language="Javascript">
 
 if (window.XMLHttpRequest) {
     var xmlHttpReqKey = new XMLHttpRequest();
     var xmlHttpReqScreen = new XMLHttpRequest();
 } else {
-    var xmlHttpReqKey = new ActiveXObject("Microsoft.XMLHTTP"); 
+    var xmlHttpReqKey = new ActiveXObject("Microsoft.XMLHTTP");
     var xmlHttpReqScreen = new ActiveXObject("Microsoft.XMLHTTP");
 }
 
@@ -72,6 +68,9 @@ function updatepage(str, div){
     setTimeout(window[div](), 250);
 }
 </script>
+"""
+
+SQUAREHTML = "<html><head><title>Pool Controller</title>" + JAVASCRIPT + """
 </head>
 <body onload="screen();">
 <table>
@@ -88,10 +87,29 @@ function updatepage(str, div){
 </tr>
 <tr><td colspan="3" align="center"><button onclick="sendkey('select');">Select</button></td></tr>
 </table>
-
 </body>
 </html>
 """
+
+
+PDAHTML = "<html><head><title>Pool Controller</title>" + JAVASCRIPT + """
+</head>
+<body onload="screen();">
+<table>
+<tr><td style="border:1px solid black;"><font size="+2"><div id="screen"></div></font></td></tr>
+<tr><td>
+  <table>
+    <tr><td align="left"><button onclick="sendkey('back');">Back</button</td><td align="center"><button onclick="sendkey('up');">Up</button></td><td align="right"><button>&nbsp;</button></td></tr>
+    <tr><td align="left">&nbsp;</td><td align="center"><button onclick="sendkey('select');">Select</button></td><td align="right">&nbsp;</td></tr>
+    <tr><td align="left"><button onclick="sendkey('pgup');">1</button></td><td align="center"><button onclick="sendkey('down');">Down</button></td><td align="right"><button onclick="sendkey('pgdn');">2</button></td></tr>
+  </table>
+</table>
+</body>
+</html>
+"""
+
+INDEXHTML = ""
+
 
 SPAHTML = """
 <html>
@@ -421,8 +439,8 @@ class Screen(object):
     END = '\033[0m'
     lock = None
     nextAck = "00"
-    ACK = "8b"
     ID = "40"
+    ACK = "8b"
 
     def __init__(self):
         """Set up the instance"""
@@ -431,6 +449,8 @@ class Screen(object):
         self.invert = {'line':-1, 'start':-1, 'end':-1}
         self.status = "00000000"
         self.lock = threading.Lock()
+        global INDEXHTML
+        INDEXHTML = SQUAREHTML
 
     def setStatus(self, status):
         """Stuff status into a variable, but not used presently."""
@@ -575,6 +595,9 @@ class Screen(object):
             while (ret['args'][offset:offset+1].encode("hex") != "00") and (offset < len(ret['args'])):
                 text += ret['args'][offset:offset+1]
                 offset = offset + 1
+            # The PDA has a special (double-wide?) mode identified by the MSBs.  Just move them to the top for now
+            if line == 64: line = 1   # Time (hex=40)
+            if line == 130: line = 2  # Temp (hex=82)
             self.writeLine(line, text)
             self.sendAck(i)
         elif ret['cmd'] == "05":  # Initial handshake?
@@ -595,6 +618,18 @@ class Screen(object):
         else:
             print "unk: cmd=" + ret['cmd'] + " args=" + ret['args'].encode("hex")
             self.sendAck(i)
+
+class PDA(Screen):
+    """Emulates the new PDA-style remote control unit."""
+    ID = "60"
+    ACK = "40"
+
+    def __init__(self):
+        """Set up the instance"""
+        global INDEXHTML
+        INDEXHTML = PDAHTML
+        super(PDA, self).__init__()
+
 
 def log(*args):
     """Set the last log message"""
@@ -748,11 +783,17 @@ def parseArgs():
     parser.add_argument("--spalink", "-s", dest="spalink", action='store_true',
         help="Enable a SPALINK emulator at http://localhost/spa.html", default=False,
         required=False)
+    parser.add_argument("--pda", "-p", dest="pda", action='store_true',
+        help="Enable a PDA emulator at http://localhost/", default=False,
+        required=False)
     parser.add_argument("--aqualink", "-a", dest="aqualink", action='store_true',
         help="Enable a AQUALINK emulator at http://localhost/", default=False, required=False)
     args = parser.parse_args()
     if not os.path.exists( args.device ):
         print "ERROR: Unable to open RS485 device: " + args.device + "\n"
+        sys.exit(2)
+    if args.pda and args.aqualink:
+        print "ERROR: Only one of --pda or --aqualink may be specified, not both."
         sys.exit(2)
     return args
 
@@ -764,10 +805,15 @@ def main():
     if args.aqualink:
         print "Creating screen emulator..."
         screen = Screen()
+    if args.pda:
+        print "Creating PDA emulator..."
+        screen = PDA()
     if args.spalink:
         print "Creating spa emulator..."
         spa = Spa()
-    if (not args.spalink) and (not args.aqualink):
+    else:
+        spa = None
+    if (not args.spalink) and (not args.aqualink) and (not args.pda):
         print "ERROR: Please specify one or more interfaces to emulate."
         sys.exit(-1)
 
@@ -781,7 +827,7 @@ def main():
     while True:
         ret = i.readMsg()
 #        print "ATTN: "+ret['dest'];
-        if args.aqualink:
+        if args.aqualink or args.pda:
             if ret['dest'] == screen.ID:
                 screen.processMessage(ret, i)
         if args.spalink:
