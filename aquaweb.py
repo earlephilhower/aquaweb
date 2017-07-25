@@ -3,6 +3,7 @@
 """Simulates AqualinkRS square remote and spa remote with a RS485 interface."""
 
 import argparse
+import base64
 import string
 import serial
 import struct
@@ -69,6 +70,11 @@ function updatepage(str, div){
 }
 </script>
 """
+
+FAVICON = base64.decodestring("""AAABAAEAEBACAAEAAQCwAAAAFgAAACgAAAAQAAAAIAAAAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAwAAAAAAAP//AAD//wAA/r8AANAHAACKiQAAH3AAAD68AAAR1AAAn6EAANFXAAD6pgAA
+99EAAP/LAAD/3wAA//8AAP//AAD//wAA//8AAP6/AADQBwAAiokAAB9wAAA+vAAAEdQAAJ+hAADR
+VwAA+qYAAPfRAAD/ywAA/98AAP//AAD//wAA""")
 
 SQUAREHTML = "<html><head><title>Pool Controller</title>" + JAVASCRIPT + """
 </head>
@@ -211,8 +217,13 @@ class webHandler(BaseHTTPRequestHandler):
         """HTTP GET handler, only the html files allowed."""
         if self.path == "/":
             self.path = "/index.html"
+        if (self.path  == "/favicon.ico") or (self.path == "favicon.ico"):
+            self.send_response(200);
+            self.send_header('Content-Type', "image/vnd.microsoft.icon")
+            self.end_headers()
+            self.wfile.write(FAVICON)
         # We only serve some static stuff
-        if (self.path.startswith("/spa.html") or
+        elif (self.path.startswith("/spa.html") or
            self.path.startswith("/index.html")):
             mimetype = 'text/html'
             ret = ""
@@ -627,8 +638,8 @@ class PDA(Screen):
     def __init__(self):
         """Set up the instance"""
         global INDEXHTML
-        INDEXHTML = PDAHTML
         super(PDA, self).__init__()
+        INDEXHTML = PDAHTML
 
 
 def log(*args):
@@ -805,7 +816,7 @@ def main():
     if args.aqualink:
         print "Creating screen emulator..."
         screen = Screen()
-    if args.pda:
+    elif args.pda:
         print "Creating PDA emulator..."
         screen = PDA()
     if args.spalink:
