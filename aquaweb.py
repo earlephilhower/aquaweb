@@ -314,17 +314,19 @@ class MyServer(HTTPServer):
         result[0].settimeout(1.0)
         return result
 
-
+webServer = False;
 def startServer(screen, spa):
     """HTTP Server implementation, to be in separate thread from main code."""
+    global webServer
     try:
-        server = MyServer(('', PORT), webHandler)
-        print 'Started httpserver on port ' , PORT
+        webServer = MyServer(('', PORT), webHandler)
+        print 'Started httpserver on port' , PORT
         # Wait forever for incoming http requests
-        server.serve_forever(screen, spa)
+        webServer.serve_forever(screen, spa)
     except KeyboardInterrupt:
         print '^C received, shutting down the web server'
-        server.socket.close()
+#        server.socket.close()
+        webServer.shutdown()
 
 
 class Spa(object):
@@ -707,6 +709,9 @@ class Interface(object):
             except serial.SerialException:
                 self.msg += chr(0) + chr(0)
                 self._open()
+            except KeyboardInterrupt:
+                print "Keyboard exit requested."
+                return {'stop':'1'}
             if debugRaw: 
                 self.debugRaw(self.msg[-2])
                 self.debugRaw(self.msg[-1])
@@ -721,6 +726,9 @@ class Interface(object):
                 except serial.SerialException:
                     self.msg += chr(0)
                     self._open()
+                except KeyboardInterrupt:
+                    print "Keyboard exit requested."
+                    return {'stop':'1'}
                 if debugRaw:
                     self.debugRaw(self.msg[-1])
                 if self.msg[-1] == DLE:                     
@@ -788,7 +796,7 @@ class Interface(object):
 def parseArgs():
     parser = argparse.ArgumentParser( formatter_class=argparse.RawDescriptionHelpFormatter,
     description="A Python daemon to present a web interface for Jandy pool controls.",
-    epilog="Requirements:\n* RS485 interface (default = /dev/ttyUSB0)* Jandy remote PDA or OneLink Controller")
+    epilog="Requirements:\n* RS485 interface (default = /dev/ttyUSB0)\n* Jandy remote PDA or OneLink Controller")
     parser.add_argument("--device", "-d", dest = "device", default="/dev/ttyUSB0", 
         help="RS485 device, default=dev/ttyUSB0", required=False)
     parser.add_argument("--spalink", "-s", dest="spalink", action='store_true',
@@ -811,6 +819,27 @@ def parseArgs():
 def main():
     args = parseArgs()
     RS485Device = args.device
+    print "Creating RS485 port..."
+    i = Interface("RS485")
+
+    if (not args.spalink) and (not args.aqualink) and (not args.pda):
+        print "Attempting to auto-detect emulation settings, wait 15 seconds..."
+        endTime = time.time() + 15
+        while (time.time() < endTime):
+            ret = i.readMsg()
+            if (ret['dest'] == Screen.ID) and (not args.aqualink):
+                print "...Detected old-style Aqualink pad."
+                args.aqualink = True
+            if (ret['dest'] == PDA.ID) and (not args.pda):
+                print "...Detected new-style Aqualink PDA."
+                args.pda = True
+            if (ret['dest'] == Spa.ID) and (not args.spalink):
+                print "...Detected SpaLink controller."
+                args.spalink = True
+        if args.pda:
+            args.aqualink = False
+        print "Detection completed..."
+
  
     """Start the listener for a screen and spa, run webserver."""
     if args.aqualink:
@@ -828,8 +857,6 @@ def main():
         print "ERROR: Please specify one or more interfaces to emulate."
         sys.exit(-1)
 
-    print "Creating RS485 port..."
-    i = Interface("RS485")
     print "Creating web server..."
     server = threading.Thread(target=startServer, args=(screen, spa))
     server.start()
@@ -837,6 +864,10 @@ def main():
     print "Main loop begins..."
     while True:
         ret = i.readMsg()
+        if 'stop' in ret:
+            global webServer
+            webServer.shutdown()
+            return
 #        print "ATTN: "+ret['dest'];
         if args.aqualink or args.pda:
             if ret['dest'] == screen.ID:

@@ -37,6 +37,20 @@ interface as well as the RS485 bus.
 # SpaLink Web Interface
 ![SpaLink Web](https://github.com/earlephilhower/aquaweb/blob/master/spalinkweb.jpg)
 
+## Usage
+With no parameters specified on the command line, it will attempt to use /dev/ttyUSB0
+and run an auto-detect routine to see what controllers it can simulate.  To manually
+specify which control models, or change the RS485 interface device, the following
+options are available:
+````
+  -h, --help            show this help message and exit
+  --device DEVICE, -d DEVICE
+                        RS485 device, default=dev/ttyUSB0
+  --spalink, -s         Enable a SPALINK emulator at http://localhost/spa.html
+  --pda, -p             Enable a PDA emulator at http://localhost/
+  --aqualink, -a        Enable a AQUALINK emulator at http://localhost/
+````
+
 Install and run it from /etc/local.rc on a RaspberryPi and go to:
 * LCD Controller:  http://raspi/
 * SpaLink:         http://raspi/spa.html
