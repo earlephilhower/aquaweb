@@ -27,6 +27,7 @@ import socket
 import os
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 import cgi
+import logging
 
 
 # Configuration
@@ -333,7 +334,7 @@ def startServer(screen, spa):
     global webServer
     try:
         webServer = MyServer(('', PORT), webHandler)
-        print 'Started httpserver on port' , PORT
+        print 'Started httpserver on port %d' % PORT
         # Wait forever for incoming http requests
         webServer.serve_forever(screen, spa)
     except KeyboardInterrupt:
@@ -664,6 +665,7 @@ def log(*args):
     for arg in args[1:]:
         message += arg.__str__() + " "
     last_log =  message + "\n"
+    logging.debug(message)
 
 
 class Interface(object):
@@ -710,8 +712,10 @@ class Interface(object):
         Parses and returns the destination address, command, and arguments as a 
         tuple."""
         if (self.port == None):
+            logging.info("readMsg port closed, re-open port")
             self._open()  # Try and re-open port
         if (self.port == None):  # We failed, return garbage
+            logging.warn("readMsg open failed")
             return {'dest':"ff", 'cmd':"ff", 'args':""}
 
         while True:                                         
@@ -720,9 +724,11 @@ class Interface(object):
             try:
                 self.msg += self.port.read(2)
             except serial.SerialException:
+                logging.warn("readMsg SerialException")
                 self.msg += chr(0) + chr(0)
                 self._open()
             except KeyboardInterrupt:
+                logging.info("readMsg KeyboardInterrupt")
                 print "Keyboard exit requested."
                 return {'stop':'1'}
             if debugRaw: 
@@ -807,6 +813,8 @@ class Interface(object):
 
 
 def parseArgs():
+    global debugData
+    global debugRaw 
     parser = argparse.ArgumentParser( formatter_class=argparse.RawDescriptionHelpFormatter,
     description="A Python daemon to present a web interface for Jandy pool controls.",
     epilog="Requirements:\n* RS485 interface (default = /dev/ttyUSB0)\n* Jandy remote PDA or OneLink Controller")
@@ -820,7 +828,21 @@ def parseArgs():
         required=False)
     parser.add_argument("--aqualink", "-a", dest="aqualink", action='store_true',
         help="Enable a AQUALINK emulator at http://localhost/", default=False, required=False)
+    parser.add_argument('--verbose', '-v', action='count',
+        help="output additional information to stdout, specify the option multiple times to increase verbosity")
+
     args = parser.parse_args()
+
+    if args.verbose:
+        if args.verbose == 1:
+            logging.basicConfig(level=logging.INFO)
+        elif args.verbose > 1:
+            logging.basicConfig(level=logging.DEBUG)
+            debugData = True
+            if args.verbose > 2:
+                debugRaw = True
+        logging.info("verbosity level = %d" % args.verbose)
+
     if not os.path.exists( args.device ):
         print "ERROR: Unable to open RS485 device: " + args.device + "\n"
         sys.exit(2)
