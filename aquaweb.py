@@ -442,11 +442,11 @@ class Spa(object):
 
     def processMessage(self, ret, i):
         """Handle controller messages to us"""
-        if ret['cmd'] == "03":  # Text status
+        if ret['cmd'] == 0x03:  # Text status
 #            print "SPA-TEXT"
             self.sendAck(i)
             self.update(ret['args'])
-        elif ret['cmd'] == "09":  # Change send ??
+        elif ret['cmd'] == 0x09:  # Change send ??
 #            print "SPA-CHANGE"
             self.sendAck(i)
             try:
@@ -454,11 +454,11 @@ class Spa(object):
                 state = ord(ret['args'][1:2])
             except:
                 pass
-        elif ret['cmd'] == "02":  # Status binary
+        elif ret['cmd'] == 0x02:  # Status binary
 #            print "SPA-BSTATUS"
             self.sendAck(i)
             self.setStatus(ret['args'])
-        elif ret['cmd'] == "00":  # Probe
+        elif ret['cmd'] == 0x00:  # Probe
 #            print "SPA-PROBE"
             self.sendAck(i)
         else:
@@ -609,7 +609,7 @@ class Screen(object):
 
     def processMessage(self, ret, i):
         """Process message from a controller, updating internal state."""
-        if ret['cmd'] == "09":  # Clear Screen
+        if ret['cmd'] == 0x09:  # Clear Screen
             # What do the args mean?  Ignore for now
             if (ord(ret['args'][0:1])==0):
                 self.cls()
@@ -617,13 +617,13 @@ class Screen(object):
                 self.cls()
 #                print "cls: "+ret['args'].encode("UTF-8").hex()
             self.sendAck(i)
-        elif ret['cmd'] == "0f":  # Scroll Screen
+        elif ret['cmd'] == 0x0f:  # Scroll Screen
             start = ord(ret['args'][:1])
             end = ord(ret['args'][1:2])
             direction = ord(ret['args'][2:3])
             self.scroll(start, end, direction)
             self.sendAck(i)
-        elif ret['cmd'] == "04":  # Write a line
+        elif ret['cmd'] == 0x04:  # Write a line
             line = ord(ret['args'][:1])
             offset = 1
             text = ""
@@ -635,23 +635,23 @@ class Screen(object):
             if line == 130: line = 2  # Temp (hex=82)
             self.writeLine(line, text)
             self.sendAck(i)
-        elif ret['cmd'] == "05":  # Initial handshake?
+        elif ret['cmd'] == 0x05:  # Initial handshake?
             # ??? After initial turn on get this, rela box responds custom ack
 #            i.sendMsg( (chr(0), chr(1), "0b00".decode("hex")) )
             self.sendAck(i)
-        elif ret['cmd'] == "00":  # PROBE
+        elif ret['cmd'] == 0x00:  # PROBE
             self.sendAck(i)
-        elif ret['cmd'] == "02":  # Status?
+        elif ret['cmd'] == 0x02:  # Status?
             self.setStatus(ret['args'].encode("UTF-8").hex())
             self.sendAck(i)
-        elif ret['cmd'] == "08":  # Invert an entire line
+        elif ret['cmd'] == 0x08:  # Invert an entire line
             self.invertLine( ord(ret['args'][:1]) )
             self.sendAck(i)
-        elif ret['cmd'] == "10":  # Invert just some chars on a line
+        elif ret['cmd'] == 0x10:  # Invert just some chars on a line
             self.invertChars( ord(ret['args'][:1]), ord(ret['args'][1:2]), ord(ret['args'][2:3]) )
             self.sendAck(i)
         else:
-            print("unk: cmd=" + ret['cmd'] + " args=" + ret['args'].encode("UTF-8").hex())
+            print("unk: cmd=" + toHex(ret['cmd']) + " args=" + ret['args'].encode("UTF-8").hex())
             self.sendAck(i)
 
 class PDA(Screen):
@@ -787,7 +787,7 @@ class Interface(object):
                 argstr = ""
                 for a in args:
                     argstr += chr(a)
-                return {'dest':toHex(dest), 'cmd':toHex(cmd), 'args':argstr}
+                return {'dest':toHex(dest), 'cmd': cmd[0], 'args':argstr}
             else:
                 if debugData:
                     log(self.name, "-->", debugMsg, "*** bad checksum ***")
