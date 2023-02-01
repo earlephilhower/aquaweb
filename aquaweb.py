@@ -627,7 +627,7 @@ class Screen(object):
             line = ord(ret['args'][:1])
             offset = 1
             text = ""
-            while (ret['args'][offset:offset+1].encode("UTF-8").hex() != "00") and (offset < len(ret['args'])):
+            while ((offset < len(ret['args'])) and (ord(ret['args'][offset:offset+1]) != 0)):
                 text += ret['args'][offset:offset+1]
                 offset = offset + 1
             # The PDA has a special (double-wide?) mode identified by the MSBs.  Just move them to the top for now
@@ -781,11 +781,6 @@ class Interface(object):
                            toHex(checksum)+" "+toHex(dleetx)
             self.msg = []
             # stop reading if a message with a valid checksum is read
-            m = []
-            m += dlestx
-            m += dest
-            m += cmd
-            m += args
             if self.checksum(dlestx + dest + cmd + args) == checksum[0]:
                 if debugData:
                     log(self.name, "-->", debugMsg)
