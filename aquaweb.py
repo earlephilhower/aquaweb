@@ -26,7 +26,6 @@ import time
 import socket
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from email.message import Message
 import urllib
 from functools import reduce
 
@@ -254,23 +253,10 @@ class webHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """HTTP POST handler.  CGI "scripts" handled here."""
-        #ctype, pdict = urllib.parse_header(self.headers.get('content-type'))
-        m = Message()
-        m['content-type'] = self.headers.get('content-type')
-        ctype = m.get_params()[0][0]
         try:
-            pdict = m.get_params()[1]
-        except:
-            pdict = {}
-        try:
-            if ctype == 'multipart/form-data':
-                postvars = urllib.parse_multipart(self.rfile, pdict)
-            elif ctype == 'application/x-www-form-urlencoded':
-                length = int(self.headers.get('content-length'))
-                data = self.rfile.read(length).decode("UTF-8")
-                postvars = urllib.parse.parse_qs(data, keep_blank_values=1)
-            else:
-                postvars = {}
+            length = int(self.headers.get('content-length'))
+            data = self.rfile.read(length).decode("UTF-8")
+            postvars = urllib.parse.parse_qs(data, keep_blank_values=1)
         except:
             postvars = {}
         if (self.path.startswith("/key.cgi") or
@@ -306,9 +292,9 @@ class webHandler(BaseHTTPRequestHandler):
             elif self.path.startswith("/spascreen.cgi"):
                 ret = self.spa.html()
             elif self.path.startswith("/status.cgi"):
-                ret = self.screen.status
+                ret = str(self.screen.status)
             elif self.path.startswith("/spastatus.cgi"):
-                ret = self.spa.status
+                ret = str(self.spa.status)
             self.send_response(200)
             self.send_header('Content-Type', mimetype)
             self.end_headers()
@@ -385,16 +371,16 @@ class Spa(object):
 #        print "SPAUPDATE"
         self.lock.acquire()
         try:
-            text = args[1:4]
-            if args[1:7] == " . . .":
+            text = chr(args[1]) + chr(args[2]) + chr(args[3])
+            if args[1:7] == [32, 46, 32, 46, 32, 46]: # " . . ."
                 self.screen = "... ..."
             else:
                 self.screen = text
-                if ord(args[5:6]) == 1:
+                if args[5] == 1:
                     self.screen += " SET"
-                elif ord(args[9:10]) == 33:
+                elif args[9] == 33:
                     self.screen += " AIR"
-                elif ord(args[7:8]) == 33:
+                elif args[7] == 33:
                     self.screen += " H2O"
                 else:
                     print(args.encode("UTF-8").hex())
@@ -448,8 +434,8 @@ class Spa(object):
 #            print "SPA-CHANGE"
             self.sendAck(i)
             try:
-                equip = ord(ret['args'][0:1])
-                state = ord(ret['args'][1:2])
+                equip = ret['args'][0]
+                state = ret['args'][1]
             except:
                 pass
         elif ret['cmd'] == 0x02:  # Status binary
@@ -608,24 +594,24 @@ class Screen(object):
         """Process message from a controller, updating internal state."""
         if ret['cmd'] == 0x09:  # Clear Screen
             # What do the args mean?  Ignore for now
-            if (ord(ret['args'][0:1])==0):
+            if (ret['args'][0]==0):
                 self.cls()
             else:  # May be a partial clear?
                 self.cls()
 #                print "cls: "+ret['args'].encode("UTF-8").hex()
             self.sendAck(i)
         elif ret['cmd'] == 0x0f:  # Scroll Screen
-            start = ord(ret['args'][:1])
-            end = ord(ret['args'][1:2])
-            direction = ord(ret['args'][2:3])
+            start = ret['args'][0]
+            end = ret['args'][1]
+            direction = ret['args'][2]
             self.scroll(start, end, direction)
             self.sendAck(i)
         elif ret['cmd'] == 0x04:  # Write a line
-            line = ord(ret['args'][:1])
+            line = ret['args'][0]
             offset = 1
             text = ""
-            while ((offset < len(ret['args'])) and (ord(ret['args'][offset:offset+1]) != 0)):
-                text += ret['args'][offset:offset+1]
+            while ((offset < len(ret['args'])) and (ret['args'][offset] != 0)):
+                text += chr(ret['args'][offset])
                 offset = offset + 1
             # The PDA has a special (double-wide?) mode identified by the MSBs.  Just move them to the top for now
             if line == 64: line = 1   # Time (hex=40)
@@ -639,16 +625,16 @@ class Screen(object):
         elif ret['cmd'] == 0x00:  # PROBE
             self.sendAck(i)
         elif ret['cmd'] == 0x02:  # Status?
-            self.setStatus(ret['args'].encode("UTF-8").hex())
+            self.setStatus(toHex(ret['args']))
             self.sendAck(i)
         elif ret['cmd'] == 0x08:  # Invert an entire line
-            self.invertLine( ord(ret['args'][:1]) )
+            self.invertLine( ret['args'][0] )
             self.sendAck(i)
         elif ret['cmd'] == 0x10:  # Invert just some chars on a line
-            self.invertChars( ord(ret['args'][:1]), ord(ret['args'][1:2]), ord(ret['args'][2:3]) )
+            self.invertChars( ret['args'][0], ret['args'][1], ret['args'][2] )
             self.sendAck(i)
         else:
-            print("unk: cmd=" + toHex(ret['cmd']) + " args=" + ret['args'].encode("UTF-8").hex())
+            print("unk: cmd=" + toHex(ret['cmd']) + " args=" + toHex(ret['args']))
             self.sendAck(i)
 
 class PDA(Screen):
@@ -721,7 +707,7 @@ class Interface(object):
         if (self.port == None):
             self._open()  # Try and re-open port
         if (self.port == None):  # We failed, return garbage
-            return {'dest':"ff", 'cmd':"ff", 'args':""}
+            return {'dest': 0xff, 'cmd': 0xff, 'args': []}
 
         while True:                                         
             dleFound = False
@@ -743,7 +729,7 @@ class Interface(object):
                 # read until DLE ETX
                 try:
                     if (self.port == None):
-                        return {'dest':"ff", 'cmd':"ff", 'args':""}
+                        return {'dest': 0xff, 'cmd': 0xff, 'args': []}
                     self.msg += self.port.read(1)
                 except serial.SerialException:
                     self.msg += [0x00]
@@ -781,10 +767,7 @@ class Interface(object):
             if self.checksum(dlestx + dest + cmd + args) == checksum[0]:
                 if debugData:
                     log(self.name, "-->", debugMsg)
-                argstr = ""
-                for a in args:
-                    argstr += chr(a)
-                return {'dest': dest[0], 'cmd': cmd[0], 'args':argstr}
+                return {'dest': dest[0], 'cmd': cmd[0], 'args': args}
             else:
                 if debugData:
                     log(self.name, "-->", debugMsg, "*** bad checksum ***")
