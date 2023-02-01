@@ -393,15 +393,15 @@ class Spa(object):
     def setStatus(self, stat):
         """Process the status into a string for HTML return"""
         try:
-            if ord(stat[0:1]) & 16:
+            if stat[0] & 16:
                 self.status['spa'] = 'ON'
             else:
                 self.status['spa'] = 'OFF'
-            if ord(stat[0:1]) & 1:
+            if stat[0] & 1:
                 self.status['jets'] = 'ON'
             else:
                 self.status['jets'] = 'OFF'
-            if ord(stat[0:1]) & 8:
+            if stat[0] & 8:
                 self.status['heat'] = 'ON'
             else:
                 self.status['heat'] = 'OFF'
