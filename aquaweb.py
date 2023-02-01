@@ -356,7 +356,7 @@ class Spa(object):
     lock = None
     nextAck = "00"
     status = {}
-    ID = "20"
+    ID = 0x20
     ACK = "00"
 
     def __init__(self):
@@ -474,7 +474,7 @@ class Screen(object):
     END = '\033[0m'
     lock = None
     nextAck = "00"
-    ID = "40"
+    ID = 0x40
     ACK = "8b"
 
     def __init__(self):
@@ -656,7 +656,7 @@ class Screen(object):
 
 class PDA(Screen):
     """Emulates the new PDA-style remote control unit."""
-    ID = "60"
+    ID = 0x60
     ACK = "40"
 
     def __init__(self):
@@ -787,7 +787,7 @@ class Interface(object):
                 argstr = ""
                 for a in args:
                     argstr += chr(a)
-                return {'dest':toHex(dest), 'cmd': cmd[0], 'args':argstr}
+                return {'dest': dest[0], 'cmd': cmd[0], 'args':argstr}
             else:
                 if debugData:
                     log(self.name, "-->", debugMsg, "*** bad checksum ***")
