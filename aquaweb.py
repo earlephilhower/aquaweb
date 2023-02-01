@@ -354,23 +354,21 @@ def startServer(screen, spa):
 class Spa(object):
     """Emulate spa-side controller with LCD display."""
     lock = None
-    nextAck = "00"
+    nextAck = 0x00
     status = {}
     ID = 0x20
-    ACK = "00"
+    ACK = 0x00
 
     def __init__(self):
         self.screen = "---"
         self.status = {'spa': "UNK", 'jets': "UNK", 'heat': "UNK"}
-        self.nextAck = "00"
+        self.nextAck = 0x00
         self.lock = threading.Lock()
 
     def sendAck(self, i):
         """Tell controller we got messag, including keypresses in response."""
-        ackstr = self.ACK + self.nextAck
-#	print "SPACK: "+ackstr
-        i.sendMsg(0x00, 0x01, [int(self.ACK, 16), int(self.nextAck, 16)]) #(chr(0), chr(1), ackstr.decode("hex")))
-        self.nextAck = "00"
+        i.sendMsg(0x00, 0x01, [self.ACK, self.nextAck])
+        self.nextAck = 0x00
 
     def setNextAck(self, nextAck):
         """Set value to send on next controller ping."""
@@ -378,7 +376,7 @@ class Spa(object):
 
     def sendKey(self, key):
         """Send a key on the next ack"""
-        keyToAck = {'1': "09", '2': "06", '3': "03", '4': "08", '5': "02", '6': "07", '7': "04", '8': "01", '*': "05"}
+        keyToAck = {'1': 0x09, '2': 0x06, '3': 0x03, '4': 0x08, '5': 0x02, '6': 0x07, '7': 0x04, '8': 0x01, '*': 0x05}
         if key in list(keyToAck.keys()):
             self.setNextAck(keyToAck[key])
 
@@ -473,9 +471,9 @@ class Screen(object):
     UNDERLINE = '\033[4m'
     END = '\033[0m'
     lock = None
-    nextAck = "00"
+    nextAck = 0x00
     ID = 0x40
-    ACK = "8b"
+    ACK = 0x8b
 
     def __init__(self):
         """Set up the instance"""
@@ -593,9 +591,8 @@ class Screen(object):
 
     def sendAck(self, i):
         """Controller talked to us, send back our last keypress."""
-        ackstr = self.ACK + self.nextAck
-        i.sendMsg( 0x00, 0x01, [int(self.ACK, 16), int(self.nextAck, 16)] ) #(chr(0), chr(1), ackstr.decode("hex")) )
-        self.nextAck = "00"
+        i.sendMsg( 0x00, 0x01, [self.ACK, self.nextAck] )
+        self.nextAck = 0x00
 
     def setNextAck(self, nextAck):
         """Set the value we will send on the next ack, but don't send yet."""
@@ -603,7 +600,7 @@ class Screen(object):
 
     def sendKey(self, key):
         """Send a key (text) on the next ack."""
-        keyToAck = { 'up':"06", 'down':"05", 'back':"02", 'select':"04", 'pgup':"01", 'pgdn':"03" }
+        keyToAck = { 'up': 0x06, 'down': 0x05, 'back': 0x02, 'select': 0x04, 'pgup': 0x01, 'pgdn': 0x03 }
         if key in list(keyToAck.keys()):
             self.setNextAck(keyToAck[key])
 
@@ -657,7 +654,7 @@ class Screen(object):
 class PDA(Screen):
     """Emulates the new PDA-style remote control unit."""
     ID = 0x60
-    ACK = "40"
+    ACK = 0x40
 
     def __init__(self):
         """Set up the instance"""
