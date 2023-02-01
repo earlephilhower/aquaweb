@@ -26,7 +26,6 @@ import time
 import socket
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from email.message import Message
 import urllib
 from functools import reduce
 
@@ -254,23 +253,10 @@ class webHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """HTTP POST handler.  CGI "scripts" handled here."""
-        #ctype, pdict = urllib.parse_header(self.headers.get('content-type'))
-        m = Message()
-        m['content-type'] = self.headers.get('content-type')
-        ctype = m.get_params()[0][0]
         try:
-            pdict = m.get_params()[1]
-        except:
-            pdict = {}
-        try:
-            if ctype == 'multipart/form-data':
-                postvars = urllib.parse_multipart(self.rfile, pdict)
-            elif ctype == 'application/x-www-form-urlencoded':
-                length = int(self.headers.get('content-length'))
-                data = self.rfile.read(length).decode("UTF-8")
-                postvars = urllib.parse.parse_qs(data, keep_blank_values=1)
-            else:
-                postvars = {}
+            length = int(self.headers.get('content-length'))
+            data = self.rfile.read(length).decode("UTF-8")
+            postvars = urllib.parse.parse_qs(data, keep_blank_values=1)
         except:
             postvars = {}
         if (self.path.startswith("/key.cgi") or
@@ -306,9 +292,9 @@ class webHandler(BaseHTTPRequestHandler):
             elif self.path.startswith("/spascreen.cgi"):
                 ret = self.spa.html()
             elif self.path.startswith("/status.cgi"):
-                ret = self.screen.status
+                ret = str(self.screen.status)
             elif self.path.startswith("/spastatus.cgi"):
-                ret = self.spa.status
+                ret = str(self.spa.status)
             self.send_response(200)
             self.send_header('Content-Type', mimetype)
             self.end_headers()
@@ -354,23 +340,21 @@ def startServer(screen, spa):
 class Spa(object):
     """Emulate spa-side controller with LCD display."""
     lock = None
-    nextAck = "00"
+    nextAck = 0x00
     status = {}
-    ID = "20"
-    ACK = "00"
+    ID = 0x20
+    ACK = 0x00
 
     def __init__(self):
         self.screen = "---"
         self.status = {'spa': "UNK", 'jets': "UNK", 'heat': "UNK"}
-        self.nextAck = "00"
+        self.nextAck = 0x00
         self.lock = threading.Lock()
 
     def sendAck(self, i):
         """Tell controller we got messag, including keypresses in response."""
-        ackstr = self.ACK + self.nextAck
-#	print "SPACK: "+ackstr
-        i.sendMsg(0x00, 0x01, [int(self.ACK, 16), int(self.nextAck, 16)]) #(chr(0), chr(1), ackstr.decode("hex")))
-        self.nextAck = "00"
+        i.sendMsg(0x00, 0x01, [self.ACK, self.nextAck])
+        self.nextAck = 0x00
 
     def setNextAck(self, nextAck):
         """Set value to send on next controller ping."""
@@ -378,7 +362,7 @@ class Spa(object):
 
     def sendKey(self, key):
         """Send a key on the next ack"""
-        keyToAck = {'1': "09", '2': "06", '3': "03", '4': "08", '5': "02", '6': "07", '7': "04", '8': "01", '*': "05"}
+        keyToAck = {'1': 0x09, '2': 0x06, '3': 0x03, '4': 0x08, '5': 0x02, '6': 0x07, '7': 0x04, '8': 0x01, '*': 0x05}
         if key in list(keyToAck.keys()):
             self.setNextAck(keyToAck[key])
 
@@ -387,16 +371,16 @@ class Spa(object):
 #        print "SPAUPDATE"
         self.lock.acquire()
         try:
-            text = args[1:4]
-            if args[1:7] == " . . .":
+            text = chr(args[1]) + chr(args[2]) + chr(args[3])
+            if args[1:7] == [32, 46, 32, 46, 32, 46]: # " . . ."
                 self.screen = "... ..."
             else:
                 self.screen = text
-                if ord(args[5:6]) == 1:
+                if args[5] == 1:
                     self.screen += " SET"
-                elif ord(args[9:10]) == 33:
+                elif args[9] == 33:
                     self.screen += " AIR"
-                elif ord(args[7:8]) == 33:
+                elif args[7] == 33:
                     self.screen += " H2O"
                 else:
                     print(args.encode("UTF-8").hex())
@@ -409,15 +393,15 @@ class Spa(object):
     def setStatus(self, stat):
         """Process the status into a string for HTML return"""
         try:
-            if ord(stat[0:1]) & 16:
+            if stat[0] & 16:
                 self.status['spa'] = 'ON'
             else:
                 self.status['spa'] = 'OFF'
-            if ord(stat[0:1]) & 1:
+            if stat[0] & 1:
                 self.status['jets'] = 'ON'
             else:
                 self.status['jets'] = 'OFF'
-            if ord(stat[0:1]) & 8:
+            if stat[0] & 8:
                 self.status['heat'] = 'ON'
             else:
                 self.status['heat'] = 'OFF'
@@ -442,23 +426,23 @@ class Spa(object):
 
     def processMessage(self, ret, i):
         """Handle controller messages to us"""
-        if ret['cmd'] == "03":  # Text status
+        if ret['cmd'] == 0x03:  # Text status
 #            print "SPA-TEXT"
             self.sendAck(i)
             self.update(ret['args'])
-        elif ret['cmd'] == "09":  # Change send ??
+        elif ret['cmd'] == 0x09:  # Change send ??
 #            print "SPA-CHANGE"
             self.sendAck(i)
             try:
-                equip = ord(ret['args'][0:1])
-                state = ord(ret['args'][1:2])
+                equip = ret['args'][0]
+                state = ret['args'][1]
             except:
                 pass
-        elif ret['cmd'] == "02":  # Status binary
+        elif ret['cmd'] == 0x02:  # Status binary
 #            print "SPA-BSTATUS"
             self.sendAck(i)
             self.setStatus(ret['args'])
-        elif ret['cmd'] == "00":  # Probe
+        elif ret['cmd'] == 0x00:  # Probe
 #            print "SPA-PROBE"
             self.sendAck(i)
         else:
@@ -473,9 +457,9 @@ class Screen(object):
     UNDERLINE = '\033[4m'
     END = '\033[0m'
     lock = None
-    nextAck = "00"
-    ID = "40"
-    ACK = "8b"
+    nextAck = 0x00
+    ID = 0x40
+    ACK = 0x8b
 
     def __init__(self):
         """Set up the instance"""
@@ -593,9 +577,8 @@ class Screen(object):
 
     def sendAck(self, i):
         """Controller talked to us, send back our last keypress."""
-        ackstr = self.ACK + self.nextAck
-        i.sendMsg( 0x00, 0x01, [int(self.ACK, 16), int(self.nextAck, 16)] ) #(chr(0), chr(1), ackstr.decode("hex")) )
-        self.nextAck = "00"
+        i.sendMsg( 0x00, 0x01, [self.ACK, self.nextAck] )
+        self.nextAck = 0x00
 
     def setNextAck(self, nextAck):
         """Set the value we will send on the next ack, but don't send yet."""
@@ -603,61 +586,61 @@ class Screen(object):
 
     def sendKey(self, key):
         """Send a key (text) on the next ack."""
-        keyToAck = { 'up':"06", 'down':"05", 'back':"02", 'select':"04", 'pgup':"01", 'pgdn':"03" }
+        keyToAck = { 'up': 0x06, 'down': 0x05, 'back': 0x02, 'select': 0x04, 'pgup': 0x01, 'pgdn': 0x03 }
         if key in list(keyToAck.keys()):
             self.setNextAck(keyToAck[key])
 
     def processMessage(self, ret, i):
         """Process message from a controller, updating internal state."""
-        if ret['cmd'] == "09":  # Clear Screen
+        if ret['cmd'] == 0x09:  # Clear Screen
             # What do the args mean?  Ignore for now
-            if (ord(ret['args'][0:1])==0):
+            if (ret['args'][0]==0):
                 self.cls()
             else:  # May be a partial clear?
                 self.cls()
 #                print "cls: "+ret['args'].encode("UTF-8").hex()
             self.sendAck(i)
-        elif ret['cmd'] == "0f":  # Scroll Screen
-            start = ord(ret['args'][:1])
-            end = ord(ret['args'][1:2])
-            direction = ord(ret['args'][2:3])
+        elif ret['cmd'] == 0x0f:  # Scroll Screen
+            start = ret['args'][0]
+            end = ret['args'][1]
+            direction = ret['args'][2]
             self.scroll(start, end, direction)
             self.sendAck(i)
-        elif ret['cmd'] == "04":  # Write a line
-            line = ord(ret['args'][:1])
+        elif ret['cmd'] == 0x04:  # Write a line
+            line = ret['args'][0]
             offset = 1
             text = ""
-            while (ret['args'][offset:offset+1].encode("UTF-8").hex() != "00") and (offset < len(ret['args'])):
-                text += ret['args'][offset:offset+1]
+            while ((offset < len(ret['args'])) and (ret['args'][offset] != 0)):
+                text += chr(ret['args'][offset])
                 offset = offset + 1
             # The PDA has a special (double-wide?) mode identified by the MSBs.  Just move them to the top for now
             if line == 64: line = 1   # Time (hex=40)
             if line == 130: line = 2  # Temp (hex=82)
             self.writeLine(line, text)
             self.sendAck(i)
-        elif ret['cmd'] == "05":  # Initial handshake?
+        elif ret['cmd'] == 0x05:  # Initial handshake?
             # ??? After initial turn on get this, rela box responds custom ack
 #            i.sendMsg( (chr(0), chr(1), "0b00".decode("hex")) )
             self.sendAck(i)
-        elif ret['cmd'] == "00":  # PROBE
+        elif ret['cmd'] == 0x00:  # PROBE
             self.sendAck(i)
-        elif ret['cmd'] == "02":  # Status?
-            self.setStatus(ret['args'].encode("UTF-8").hex())
+        elif ret['cmd'] == 0x02:  # Status?
+            self.setStatus(toHex(ret['args']))
             self.sendAck(i)
-        elif ret['cmd'] == "08":  # Invert an entire line
-            self.invertLine( ord(ret['args'][:1]) )
+        elif ret['cmd'] == 0x08:  # Invert an entire line
+            self.invertLine( ret['args'][0] )
             self.sendAck(i)
-        elif ret['cmd'] == "10":  # Invert just some chars on a line
-            self.invertChars( ord(ret['args'][:1]), ord(ret['args'][1:2]), ord(ret['args'][2:3]) )
+        elif ret['cmd'] == 0x10:  # Invert just some chars on a line
+            self.invertChars( ret['args'][0], ret['args'][1], ret['args'][2] )
             self.sendAck(i)
         else:
-            print("unk: cmd=" + ret['cmd'] + " args=" + ret['args'].encode("UTF-8").hex())
+            print("unk: cmd=" + toHex(ret['cmd']) + " args=" + toHex(ret['args']))
             self.sendAck(i)
 
 class PDA(Screen):
     """Emulates the new PDA-style remote control unit."""
-    ID = "60"
-    ACK = "40"
+    ID = 0x60
+    ACK = 0x40
 
     def __init__(self):
         """Set up the instance"""
@@ -724,7 +707,7 @@ class Interface(object):
         if (self.port == None):
             self._open()  # Try and re-open port
         if (self.port == None):  # We failed, return garbage
-            return {'dest':"ff", 'cmd':"ff", 'args':""}
+            return {'dest': 0xff, 'cmd': 0xff, 'args': []}
 
         while True:                                         
             dleFound = False
@@ -746,7 +729,7 @@ class Interface(object):
                 # read until DLE ETX
                 try:
                     if (self.port == None):
-                        return {'dest':"ff", 'cmd':"ff", 'args':""}
+                        return {'dest': 0xff, 'cmd': 0xff, 'args': []}
                     self.msg += self.port.read(1)
                 except serial.SerialException:
                     self.msg += [0x00]
@@ -781,18 +764,10 @@ class Interface(object):
                            toHex(checksum)+" "+toHex(dleetx)
             self.msg = []
             # stop reading if a message with a valid checksum is read
-            m = []
-            m += dlestx
-            m += dest
-            m += cmd
-            m += args
             if self.checksum(dlestx + dest + cmd + args) == checksum[0]:
                 if debugData:
                     log(self.name, "-->", debugMsg)
-                argstr = ""
-                for a in args:
-                    argstr += chr(a)
-                return {'dest':toHex(dest), 'cmd':toHex(cmd), 'args':argstr}
+                return {'dest': dest[0], 'cmd': cmd[0], 'args': args}
             else:
                 if debugData:
                     log(self.name, "-->", debugMsg, "*** bad checksum ***")
