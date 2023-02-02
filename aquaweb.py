@@ -755,10 +755,10 @@ class Interface(object):
             dest = self.msg[2:3]
             cmd = self.msg[3:4]
             args = self.msg[4:-3]
-            ascii_args = str([chr(x) for x in args if chr(x) in string.printable])
             checksum = self.msg[-3:-2]
             dleetx = self.msg[-2:]
             if debugData:
+                ascii_args = str([chr(x) for x in args if chr(x) in string.printable])
                 debugMsg = toHex(dlestx)+" "+toHex(dest)+" "+\
                            toHex(cmd)+" "+toHex(args)+" \""+str(ascii_args)+"\" " +\
                            toHex(checksum)+" "+toHex(dleetx)
