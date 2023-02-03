@@ -412,9 +412,7 @@ class Spa(object):
         """Return HTML formatted 7-segment display"""
         self.lock.acquire()
         try:
-            ret = "<pre>"
-            ret += self.screen
-            ret += "</pre>"
+            ret = ''.join("<pre>", self.screen, "</pre>")
         finally:
             self.lock.release()
         return ret
@@ -426,13 +424,12 @@ class Spa(object):
 
     def processMessage(self, ret, i):
         """Handle controller messages to us"""
+        self.sendAck(i)
         if ret['cmd'] == 0x03:  # Text status
 #            print "SPA-TEXT"
-            self.sendAck(i)
             self.update(ret['args'])
         elif ret['cmd'] == 0x09:  # Change send ??
 #            print "SPA-CHANGE"
-            self.sendAck(i)
             try:
                 equip = ret['args'][0]
                 state = ret['args'][1]
@@ -440,15 +437,13 @@ class Spa(object):
                 pass
         elif ret['cmd'] == 0x02:  # Status binary
 #            print "SPA-BSTATUS"
-            self.sendAck(i)
             self.setStatus(ret['args'])
         elif ret['cmd'] == 0x00:  # Probe
 #            print "SPA-PROBE"
-            self.sendAck(i)
+            pass
         else:
 #            print "SPA-UNKCMD"
-            self.sendAck(i)
-
+            pass
 
 class Screen(object):
     """Emulates the square remote control unit."""
@@ -592,6 +587,7 @@ class Screen(object):
 
     def processMessage(self, ret, i):
         """Process message from a controller, updating internal state."""
+        self.sendAck(i)
         if ret['cmd'] == 0x09:  # Clear Screen
             # What do the args mean?  Ignore for now
             if (ret['args'][0]==0):
@@ -599,13 +595,11 @@ class Screen(object):
             else:  # May be a partial clear?
                 self.cls()
 #                print "cls: "+ret['args'].encode("UTF-8").hex()
-            self.sendAck(i)
         elif ret['cmd'] == 0x0f:  # Scroll Screen
             start = ret['args'][0]
             end = ret['args'][1]
             direction = ret['args'][2]
             self.scroll(start, end, direction)
-            self.sendAck(i)
         elif ret['cmd'] == 0x04:  # Write a line
             line = ret['args'][0]
             offset = 1
@@ -617,25 +611,20 @@ class Screen(object):
             if line == 64: line = 1   # Time (hex=40)
             if line == 130: line = 2  # Temp (hex=82)
             self.writeLine(line, text)
-            self.sendAck(i)
         elif ret['cmd'] == 0x05:  # Initial handshake?
             # ??? After initial turn on get this, rela box responds custom ack
 #            i.sendMsg( (chr(0), chr(1), "0b00".decode("hex")) )
-            self.sendAck(i)
+            pass
         elif ret['cmd'] == 0x00:  # PROBE
-            self.sendAck(i)
+            pass
         elif ret['cmd'] == 0x02:  # Status?
             self.setStatus(toHex(ret['args']))
-            self.sendAck(i)
         elif ret['cmd'] == 0x08:  # Invert an entire line
             self.invertLine( ret['args'][0] )
-            self.sendAck(i)
         elif ret['cmd'] == 0x10:  # Invert just some chars on a line
             self.invertChars( ret['args'][0], ret['args'][1], ret['args'][2] )
-            self.sendAck(i)
         else:
             print("unk: cmd=" + toHex(ret['cmd']) + " args=" + toHex(ret['args']))
-            self.sendAck(i)
 
 class PDA(Screen):
     """Emulates the new PDA-style remote control unit."""
