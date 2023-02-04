@@ -19,7 +19,6 @@ import argparse
 import base64
 import string
 import serial
-import struct
 import threading
 import sys
 import time
@@ -27,7 +26,6 @@ import socket
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib
-from functools import reduce
 
 
 # Configuration
@@ -56,11 +54,11 @@ if (window.XMLHttpRequest) {
 }
 
 function screen() {
-    xmlhttpPost(xmlHttpReqScreen, "/screen.cgi", "", "screen");
+    xmlhttpPost(xmlHttpReqScreen, "/cgi/screen.cgi", "", "screen");
 }
 
 function sendkey(key) {
-    xmlhttpPost(xmlHttpReqKey, "/key.cgi", "key="+key);
+    xmlhttpPost(xmlHttpReqKey, "/cgi/key.cgi", "key="+key);
 }
 
 function xmlhttpPost(xmlReq, strURL, params, update) {
@@ -147,15 +145,15 @@ if (window.XMLHttpRequest) {
 }
 
 function screen() { /* Ping-pong between lights and lcd */
-    xmlhttpPost(xmlHttpReqStatus, "/spastatus.cgi", "", "cstat");
+    xmlhttpPost(xmlHttpReqStatus, "/cgi/spastatus.cgi", "", "cstat");
 }
 
 function cstat() {
-    xmlhttpPost(xmlHttpReqScreen, "/spascreen.cgi", "", "screen");
+    xmlhttpPost(xmlHttpReqScreen, "/cgi/spascreen.cgi", "", "screen");
 }
 
 function sendkey(key) {
-    xmlhttpPost(xmlHttpReqKey, "/spakey.cgi", "key="+key);
+    xmlhttpPost(xmlHttpReqKey, "/cgi/spakey.cgi", "key="+key);
 }
 
 function xmlhttpPost(xmlReq, strURL, params, update) {
@@ -236,18 +234,21 @@ class webHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(FAVICON)
         # We only serve some static stuff
-        elif (self.path.startswith("/spa.html") or
+        elif (self.path.startswith("/spa") or
            self.path.startswith("/index.html")):
             mimetype = 'text/html'
             ret = ""
             if self.path.startswith("/index.html"):
                 ret = INDEXHTML
-            elif self.path.startswith("/spa.html"):
+            elif self.path.startswith("/spa"):
                 ret = SPAHTML
             self.send_response(200)
             self.send_header('Content-Type', mimetype)
             self.end_headers()
-            self.wfile.write(bytearray(ret, "UTF-8"))
+            try:
+                self.wfile.write(bytearray(ret, "UTF-8"))
+            except:
+                pass
         else:
             self.send_error(404, 'File Not Found: %s' % self.path)
 
@@ -259,27 +260,20 @@ class webHandler(BaseHTTPRequestHandler):
             postvars = urllib.parse.parse_qs(data, keep_blank_values=1)
         except:
             postvars = {}
-        if (self.path.startswith("/key.cgi") or
-           self.path.startswith("/spakey.cgi") or
-           self.path.startswith("/spabinary.cgi") or
-           self.path.startswith("/screen.cgi") or
-           self.path.startswith("/spascreen.cgi") or
-           self.path.startswith("/status.cgi") or
-           self.path.startswith("/spastatus.cgi")):
+        if self.path.startswith("/cgi/"):
             mimetype = 'text/html'
             ret = ""
-            if self.path.startswith("/key.cgi"):
+            if self.path.startswith("/cgi/key.cgi"):
                 if 'key' in postvars:
                     key = postvars['key'][0]
                     self.screen.sendKey(key)
-                ret = "<html><head><title>key</title></head><body>"+key+"</body></html>\n"
-            elif self.path.startswith("/spakey.cgi"):
+                    ret = "<html><head><title>key</title></head><body>"+key+"</body></html>\n"
+            elif self.path.startswith("/cgi/spakey.cgi"):
                 if 'key' in postvars:
                     key = postvars['key'][0]
                     self.spa.sendKey(key)
-#                    print "SPA - key "+key
                     ret = "<html><head><title>key</title></head><body>"+key+"</body></html>\n"
-            elif self.path.startswith("/spabinary.cgi"):
+            elif self.path.startswith("/cgi/spabinary.cgi"):
                 ret = self.spa.text() + "|" + time.strftime("%_I:%M%P %_m/%d") + "|"
                 if (self.spa.status['spa']=="ON"): ret += "1"
                 else: ret += "0"
@@ -287,18 +281,21 @@ class webHandler(BaseHTTPRequestHandler):
                 else: ret += "0"
                 if (self.spa.status['jets']=="ON"): ret += "1"
                 else: ret += "0"
-            elif self.path.startswith("/screen.cgi"):
+            elif self.path.startswith("/cgi/screen.cgi"):
                 ret = self.screen.html()
-            elif self.path.startswith("/spascreen.cgi"):
+            elif self.path.startswith("/cgi/spascreen.cgi"):
                 ret = self.spa.html()
-            elif self.path.startswith("/status.cgi"):
+            elif self.path.startswith("/cgi/status.cgi"):
                 ret = str(self.screen.status)
-            elif self.path.startswith("/spastatus.cgi"):
+            elif self.path.startswith("/cgi/spastatus.cgi"):
                 ret = str(self.spa.status)
             self.send_response(200)
             self.send_header('Content-Type', mimetype)
             self.end_headers()
-            self.wfile.write(bytearray(ret, "UTF-8"))
+            try:
+                self.wfile.write(bytearray(ret, "UTF-8"))
+            except:
+                pass
         else:
             self.send_error(404, 'File Not Found: %s' % self.path)
 
@@ -333,7 +330,6 @@ def startServer(screen, spa):
         webServer.serve_forever(screen, spa)
     except KeyboardInterrupt:
         print('^C received, shutting down the web server')
-#        server.socket.close()
         webServer.shutdown()
 
 
@@ -368,7 +364,6 @@ class Spa(object):
 
     def update(self, args):
         """Update the 7-segment LCD display."""
-#        print "SPAUPDATE"
         self.lock.acquire()
         try:
             text = chr(args[1]) + chr(args[2]) + chr(args[3])
@@ -388,7 +383,6 @@ class Spa(object):
                     self.screen = "OFF H2O"
         finally:
             self.lock.release()
-#            print "SPATEXT: "+text
 
     def setStatus(self, stat):
         """Process the status into a string for HTML return"""
@@ -412,7 +406,7 @@ class Spa(object):
         """Return HTML formatted 7-segment display"""
         self.lock.acquire()
         try:
-            ret = ''.join("<pre>", self.screen, "</pre>")
+            ret = "<pre>" + self.screen + "</pre>"
         finally:
             self.lock.release()
         return ret
@@ -426,23 +420,18 @@ class Spa(object):
         """Handle controller messages to us"""
         self.sendAck(i)
         if ret['cmd'] == 0x03:  # Text status
-#            print "SPA-TEXT"
             self.update(ret['args'])
         elif ret['cmd'] == 0x09:  # Change send ??
-#            print "SPA-CHANGE"
             try:
                 equip = ret['args'][0]
                 state = ret['args'][1]
             except:
                 pass
         elif ret['cmd'] == 0x02:  # Status binary
-#            print "SPA-BSTATUS"
             self.setStatus(ret['args'])
         elif ret['cmd'] == 0x00:  # Probe
-#            print "SPA-PROBE"
             pass
         else:
-#            print "SPA-UNKCMD"
             pass
 
 class Screen(object):
@@ -594,7 +583,6 @@ class Screen(object):
                 self.cls()
             else:  # May be a partial clear?
                 self.cls()
-#                print "cls: "+ret['args'].encode("UTF-8").hex()
         elif ret['cmd'] == 0x0f:  # Scroll Screen
             start = ret['args'][0]
             end = ret['args'][1]
@@ -613,7 +601,6 @@ class Screen(object):
             self.writeLine(line, text)
         elif ret['cmd'] == 0x05:  # Initial handshake?
             # ??? After initial turn on get this, rela box responds custom ack
-#            i.sendMsg( (chr(0), chr(1), "0b00".decode("hex")) )
             pass
         elif ret['cmd'] == 0x00:  # PROBE
             pass
@@ -867,7 +854,6 @@ def main():
             global webServer
             webServer.shutdown()
             return
-#        print "ATTN: "+ret['dest'];
         if args.aqualink or args.pda:
             if ret['dest'] == screen.ID:
                 screen.processMessage(ret, i)
