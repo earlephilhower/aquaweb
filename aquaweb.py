@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# aquaweb.py - Simulates Aqualink remotes with a web interface
-# Earle F. Philhower, III <earlephilhower@yahoo.com>
+"""aquaweb.py - Simulates Aqualink remotes with a web interface"""
+
+# Copyright (c) 2023, Earle F. Philhower, III <earlephilhower@yahoo.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,14 +19,14 @@
 import argparse
 import base64
 import string
-import serial
 import threading
 import sys
 import time
-import socket
 import os
+import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib
+import serial
 
 
 # Configuration
@@ -82,7 +83,8 @@ function updatepage(str, div){
 </script>
 """
 
-FAVICON = base64.b64decode("""AAABAAEAEBACAAEAAQCwAAAAFgAAACgAAAAQAAAAIAAAAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAA
+FAVICON = base64.b64decode("""\
+AAABAAEAEBACAAEAAQCwAAAAFgAAACgAAAAQAAAAIAAAAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAwAAAAAAAP//AAD//wAA/r8AANAHAACKiQAAH3AAAD68AAAR1AAAn6EAANFXAAD6pgAA
 99EAAP/LAAD/3wAA//8AAP//AAD//wAA//8AAP6/AADQBwAAiokAAB9wAAA+vAAAEdQAAJ+hAADR
 VwAA+qYAAPfRAAD/ywAA/98AAP//AAD//wAA""")
@@ -214,10 +216,10 @@ class webHandler(BaseHTTPRequestHandler):
     """CGI and dummy web page handler to interface to control objects."""
     screen = None
     spa = None
+    path = None
 
     def log_request(self, code='-', size='-'):
         """Don't log anything, we're on an embedded system"""
-        pass
 
     def log_error(self, fmt, *args):
         """This was an error, dump it."""
@@ -228,14 +230,13 @@ class webHandler(BaseHTTPRequestHandler):
         """HTTP GET handler, only the html files allowed."""
         if self.path == "/":
             self.path = "/index.html"
-        if (self.path  == "/favicon.ico") or (self.path == "favicon.ico"):
-            self.send_response(200);
+        if (self.path == "/favicon.ico") or (self.path == "favicon.ico"):
+            self.send_response(200)
             self.send_header('Content-Type', "image/vnd.microsoft.icon")
             self.end_headers()
             self.wfile.write(FAVICON)
         # We only serve some static stuff
-        elif (self.path.startswith("/spa") or
-           self.path.startswith("/index.html")):
+        elif (self.path.startswith("/spa") or self.path.startswith("/index.html")):
             mimetype = 'text/html'
             ret = ""
             if self.path.startswith("/index.html"):
@@ -275,12 +276,18 @@ class webHandler(BaseHTTPRequestHandler):
                     ret = "<html><head><title>key</title></head><body>"+key+"</body></html>\n"
             elif self.path.startswith("/cgi/spabinary.cgi"):
                 ret = self.spa.text() + "|" + time.strftime("%_I:%M%P %_m/%d") + "|"
-                if (self.spa.status['spa']=="ON"): ret += "1"
-                else: ret += "0"
-                if (self.spa.status['heat']=="ON"): ret += "1"
-                else: ret += "0"
-                if (self.spa.status['jets']=="ON"): ret += "1"
-                else: ret += "0"
+                if self.spa.status['spa'] == "ON":
+                    ret += "1"
+                else:
+                    ret += "0"
+                if self.spa.status['heat'] == "ON":
+                    ret += "1"
+                else:
+                    ret += "0"
+                if self.spa.status['jets'] == "ON":
+                    ret += "1"
+                else:
+                    ret += "0"
             elif self.path.startswith("/cgi/screen.cgi"):
                 ret = self.screen.html()
             elif self.path.startswith("/cgi/spascreen.cgi"):
@@ -304,8 +311,8 @@ class MyServer(HTTPServer):
     """Override some HTTPServer procedures to allow instance variables and timeouts."""
     def serve_forever(self, screen, spa):
         """Store the screen and spa objects and serve until end of times."""
-        self.RequestHandlerClass.screen = screen 
-        self.RequestHandlerClass.spa = spa 
+        self.RequestHandlerClass.screen = screen
+        self.RequestHandlerClass.spa = spa
         HTTPServer.serve_forever(self)
     def get_request(self):
         """Get the request and client address from the socket."""
@@ -319,13 +326,13 @@ class MyServer(HTTPServer):
         result[0].settimeout(1.0)
         return result
 
-webServer = False;
+webServer = None
 def startServer(screen, spa):
     """HTTP Server implementation, to be in separate thread from main code."""
     global webServer
     try:
         webServer = MyServer(('', PORT), webHandler)
-        print('Started httpserver on port' , PORT)
+        print('Started httpserver on port', PORT)
         # Wait forever for incoming http requests
         webServer.serve_forever(screen, spa)
     except KeyboardInterrupt:
@@ -333,7 +340,7 @@ def startServer(screen, spa):
         webServer.shutdown()
 
 
-class Spa(object):
+class Spa:
     """Emulate spa-side controller with LCD display."""
     lock = None
     nextAck = 0x00
@@ -358,7 +365,8 @@ class Spa(object):
 
     def sendKey(self, key):
         """Send a key on the next ack"""
-        keyToAck = {'1': 0x09, '2': 0x06, '3': 0x03, '4': 0x08, '5': 0x02, '6': 0x07, '7': 0x04, '8': 0x01, '*': 0x05}
+        keyToAck = {'1': 0x09, '2': 0x06, '3': 0x03, '4': 0x08, '5': 0x02,
+                    '6': 0x07, '7': 0x04, '8': 0x01, '*': 0x05}
         if key in list(keyToAck.keys()):
             self.setNextAck(keyToAck[key])
 
@@ -425,6 +433,7 @@ class Spa(object):
             try:
                 equip = ret['args'][0]
                 state = ret['args'][1]
+                print("Change code " + str(equip) + " to " + str(state))
             except:
                 pass
         elif ret['cmd'] == 0x02:  # Status binary
@@ -434,7 +443,7 @@ class Spa(object):
         else:
             pass
 
-class Screen(object):
+class Screen:
     """Emulates the square remote control unit."""
     W = 16
     H = 12
@@ -541,7 +550,7 @@ class Screen(object):
         self.lock.acquire()
         try:
             ret = "<pre>"
-            for x in range(0, self.H): 
+            for x in range(0, self.H):
                 if x == self.invert['line']:
                     for y in range(0, self.W):
                         if y == self.invert['start']:
@@ -561,7 +570,7 @@ class Screen(object):
 
     def sendAck(self, i):
         """Controller talked to us, send back our last keypress."""
-        i.sendMsg( 0x00, 0x01, [self.ACK, self.nextAck] )
+        i.sendMsg(0x00, 0x01, [self.ACK, self.nextAck])
         self.nextAck = 0x00
 
     def setNextAck(self, nextAck):
@@ -570,7 +579,8 @@ class Screen(object):
 
     def sendKey(self, key):
         """Send a key (text) on the next ack."""
-        keyToAck = { 'up': 0x06, 'down': 0x05, 'back': 0x02, 'select': 0x04, 'pgup': 0x01, 'pgdn': 0x03 }
+        keyToAck = {'up': 0x06, 'down': 0x05, 'back': 0x02, 'select': 0x04,
+                    'pgup': 0x01, 'pgdn': 0x03}
         if key in list(keyToAck.keys()):
             self.setNextAck(keyToAck[key])
 
@@ -579,7 +589,7 @@ class Screen(object):
         self.sendAck(i)
         if ret['cmd'] == 0x09:  # Clear Screen
             # What do the args mean?  Ignore for now
-            if (ret['args'][0]==0):
+            if ret['args'][0] == 0:
                 self.cls()
             else:  # May be a partial clear?
                 self.cls()
@@ -595,9 +605,12 @@ class Screen(object):
             while ((offset < len(ret['args'])) and (ret['args'][offset] != 0)):
                 text += chr(ret['args'][offset])
                 offset = offset + 1
-            # The PDA has a special (double-wide?) mode identified by the MSBs.  Just move them to the top for now
-            if line == 64: line = 1   # Time (hex=40)
-            if line == 130: line = 2  # Temp (hex=82)
+            # The PDA has a special (double-wide?) mode identified by the MSBs
+            # Just move them to the top for now
+            if line == 64:
+                line = 1   # Time (hex=40)
+            if line == 130:
+                line = 2  # Temp (hex=82)
             self.writeLine(line, text)
         elif ret['cmd'] == 0x05:  # Initial handshake?
             # ??? After initial turn on get this, rela box responds custom ack
@@ -607,9 +620,9 @@ class Screen(object):
         elif ret['cmd'] == 0x02:  # Status?
             self.setStatus(toHex(ret['args']))
         elif ret['cmd'] == 0x08:  # Invert an entire line
-            self.invertLine( ret['args'][0] )
+            self.invertLine(ret['args'][0])
         elif ret['cmd'] == 0x10:  # Invert just some chars on a line
-            self.invertChars( ret['args'][0], ret['args'][1], ret['args'][2] )
+            self.invertChars(ret['args'][0], ret['args'][1], ret['args'][2])
         else:
             print("unk: cmd=" + toHex(ret['cmd']) + " args=" + toHex(ret['args']))
 
@@ -632,12 +645,13 @@ def log(*args):
     for arg in args[1:]:
         message += arg.__str__() + " "
     print(message)
-    last_log =  message + "\n"
+    last_log = message + "\n"
 
 def toHex(blist):
+    """Simple convert list of ints to a HEX string"""
     return ''.join(format(x, "02x") for x in blist)
 
-class Interface(object):
+class Interface:
     """ Aqualink serial interface """
 
     def __init__(self, theName):
@@ -667,27 +681,27 @@ class Interface(object):
             if not os.path.exists(RS485Device):
                 print('Serial port \'' + RS485Device + '\' not found.\n')
                 sys.exit(-1)
-            self.port = serial.Serial(RS485Device, baudrate=9600, 
-                                  bytesize=serial.EIGHTBITS, 
-                                  parity=serial.PARITY_NONE, 
-                                  stopbits=serial.STOPBITS_ONE,
-                                  timeout=0.1)
+            self.port = serial.Serial(RS485Device, baudrate=9600,
+                                      bytesize=serial.EIGHTBITS,
+                                      parity=serial.PARITY_NONE,
+                                      stopbits=serial.STOPBITS_ONE,
+                                      timeout=0.1)
         except:
             self.port = None
-         
-        
+
     def readMsg(self):
         """ Read the next valid message from the serial port.
-        Parses and returns the destination address, command, and arguments as a 
+        Parses and returns the destination address, command, and arguments as a
         tuple."""
-        if (self.port == None):
+        if self.port is None:
             self._open()  # Try and re-open port
-        if (self.port == None):  # We failed, return garbage
+
+        if self.port is None:  # We failed, return garbage
             return {'dest': 0xff, 'cmd': 0xff, 'args': []}
 
-        while True:                                         
+        while True:
             dleFound = False
-            # read what is probably the DLE STX
+            # Read what is probably the DLE STX
             try:
                 self.msg += self.port.read(2)
             except serial.SerialException:
@@ -698,13 +712,13 @@ class Interface(object):
                 return {'stop':'1'}
             while len(self.msg) < 2:
                 self.msg += [0x00]
-            if debugRaw: 
+            if debugRaw:
                 self.debugRaw(self.msg[-2])
                 self.debugRaw(self.msg[-1])
-            while (self.msg[-1] != ETX) or (not dleFound) or (len(self.msg)>128):  
-                # read until DLE ETX
+            while (self.msg[-1] != ETX) or (not dleFound) or (len(self.msg) > 128):
+                # Read until DLE ETX
                 try:
-                    if (self.port == None):
+                    if self.port is None:
                         return {'dest': 0xff, 'cmd': 0xff, 'args': []}
                     self.msg += self.port.read(1)
                 except serial.SerialException:
@@ -715,18 +729,18 @@ class Interface(object):
                     return {'stop':'1'}
                 if debugRaw:
                     self.debugRaw(self.msg[-1])
-                if self.msg[-1] == DLE:                     
+                if self.msg[-1] == DLE:
                     # \x10 read, tentatively is a DLE
                     dleFound = True
-                if (self.msg[-2] == DLE) and (self.msg[-1] == NUL) and dleFound: 
+                if (self.msg[-2] == DLE) and (self.msg[-1] == NUL) and dleFound:
                     # skip a NUL following a DLE
                     self.msg = self.msg[:-1]
                     # it wasn't a DLE after all
-                    dleFound = False                        
-            # skip any NULs between messages
+                    dleFound = False
+            # Skip any NULs between messages
             while self.msg[0] == 0x00:
                 self.msg = self.msg[1:]
-            # parse the elements of the message              
+            # Parse the elements of the message
             dlestx = self.msg[0:2]
             dest = self.msg[2:3]
             cmd = self.msg[3:4]
@@ -739,7 +753,7 @@ class Interface(object):
                            toHex(cmd)+" "+toHex(args)+" \""+str(ascii_args)+"\" " +\
                            toHex(checksum)+" "+toHex(dleetx)
             self.msg = []
-            # stop reading if a message with a valid checksum is read
+            # Stop reading if a message with a valid checksum is read
             if self.checksum(dlestx + dest + cmd + args) == checksum[0]:
                 if debugData:
                     log(self.name, "-->", debugMsg)
@@ -747,54 +761,60 @@ class Interface(object):
             else:
                 if debugData:
                     log(self.name, "-->", debugMsg, "*** bad checksum ***")
+                return {'dest': 0xff, 'cmd': 0xff, 'args': []}
 
     def sendMsg(self, dest, cmd, args):
         """ Send a message. """
         msg = [DLE, STX, dest, cmd]
         msg += args
         msg += [self.checksum(msg), DLE, ETX]
-        for i in range(2, len(msg) - 2):                       
-            # if a byte in the message has the value \x10 insert a NUL after it
+        for i in range(2, len(msg) - 2):
+            # If a byte in the message has the value \x10 insert a NUL after it
             if msg[i] == DLE:
                 msg = msg[0:i+1] + [0x00] + msg[i+1:]
         if debugData:
-            log(self.name, "<--", toHex(msg[0:2]), 
-                toHex(msg[2:3]), toHex(msg[3:4]), 
-                toHex(msg[4:-3]), toHex(msg[-3:-2]), 
+            log(self.name, "<--", toHex(msg[0:2]),
+                toHex(msg[2:3]), toHex(msg[3:4]),
+                toHex(msg[4:-3]), toHex(msg[-3:-2]),
                 toHex(msg[-2:]))
-        n = self.port.write(msg)
+        self.port.write(msg)
 
     def checksum(self, msg):
         """ Compute the checksum of a string of bytes."""
-        sum = 0
+        cksum = 0
         for s in msg:
-            sum += s
-        return sum % 256
+            cksum += s
+        return cksum % 256
 
     def debugRaw(self, byte):
         """ Debug raw serial data."""
         self.debugRawMsg += [byte]
-        if ((len(self.debugRawMsg) == 48) or (byte==ETX)):
+        if (len(self.debugRawMsg) == 48) or (byte == ETX):
             log(self.name, toHex(self.debugRawMsg))
             self.debugRawMsg = []
 
 
 def parseArgs():
-    parser = argparse.ArgumentParser( formatter_class=argparse.RawDescriptionHelpFormatter,
-    description="A Python daemon to present a web interface for Jandy pool controls.",
-    epilog="Requirements:\n* RS485 interface (default = /dev/ttyUSB0)\n* Jandy remote PDA or OneLink Controller")
-    parser.add_argument("--device", "-d", dest = "device", default="/dev/ttyUSB0", 
-        help="RS485 device, default=dev/ttyUSB0", required=False)
+    """Scan the arguments from the command line and/or print help message."""
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     description="A Python daemon to present a web interface"\
+                                                 "for Jandy pool controls.",
+                                     epilog="Requirements:\n"\
+                                            "* RS485 interface (default = /dev/ttyUSB0)\n"\
+                                            "* Jandy remote PDA or OneLink Controller")
+    parser.add_argument("--device", "-d", dest="device", default="/dev/ttyUSB0",
+                        help="RS485 device, default=dev/ttyUSB0", required=False)
     parser.add_argument("--spalink", "-s", dest="spalink", action='store_true',
-        help="Enable a SPALINK emulator at http://localhost/spa.html", default=False,
-        required=False)
+                        help="Enable a SPALINK emulator at http://localhost/spa.html",
+                        default=False, required=False)
     parser.add_argument("--pda", "-p", dest="pda", action='store_true',
-        help="Enable a PDA emulator at http://localhost/", default=False,
-        required=False)
+                        help="Enable a PDA emulator at http://localhost/", default=False,
+                        required=False)
     parser.add_argument("--aqualink", "-a", dest="aqualink", action='store_true',
-        help="Enable a AQUALINK emulator at http://localhost/", default=False, required=False)
+                        help="Enable a AQUALINK emulator at http://localhost/", default=False,
+                        required=False)
     args = parser.parse_args()
-    if not os.path.exists( args.device ):
+    if not os.path.exists(args.device):
         print("ERROR: Unable to open RS485 device: " + args.device + "\n")
         sys.exit(2)
     if args.pda and args.aqualink:
@@ -803,7 +823,9 @@ def parseArgs():
     return args
 
 def main():
+    """Run as a standalone application"""
     args = parseArgs()
+    global RS485Device
     RS485Device = args.device
     print("Creating RS485 port...")
     i = Interface("RS485")
@@ -811,7 +833,7 @@ def main():
     if (not args.spalink) and (not args.aqualink) and (not args.pda):
         print("Attempting to auto-detect emulation settings, wait 15 seconds...")
         endTime = time.time() + 15
-        while (time.time() < endTime):
+        while time.time() < endTime:
             ret = i.readMsg()
             if (ret['dest'] == Screen.ID) and (not args.aqualink):
                 print("...Detected old-style Aqualink pad.")
@@ -826,8 +848,7 @@ def main():
             args.aqualink = False
         print("Detection completed...")
 
- 
-    """Start the listener for a screen and spa, run webserver."""
+    # Start the listener for a screen and spa, run webserver
     if args.aqualink:
         print("Creating screen emulator...")
         screen = Screen()
