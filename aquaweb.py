@@ -781,10 +781,7 @@ class Interface:
 
     def checksum(self, msg):
         """ Compute the checksum of a string of bytes."""
-        cksum = 0
-        for s in msg:
-            cksum += s
-        return cksum % 256
+        return sum(msg) & 255
 
     def debugRaw(self, byte):
         """ Debug raw serial data."""
