@@ -649,7 +649,12 @@ def log(*args):
 
 def toHex(blist):
     """Simple convert list of ints to a HEX string"""
-    return ''.join(format(x, "02x") for x in blist)
+    if isinstance(blist, list):
+       return ''.join(format(x, "02x") for x in blist)
+    elif isinstance(blist, int):
+       return format(blist, "02x")
+    else:
+       return ''
 
 class Interface:
     """ Aqualink serial interface """
