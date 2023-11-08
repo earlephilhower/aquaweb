@@ -27,13 +27,14 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib
 import serial
-
+import time
 
 # Configuration
 
 RS485Device = "/dev/ttyUSB0"        # RS485 serial device to be used
 debugData = False
 debugRaw = False
+lastReadMsgTime = time.time()
 
 # ASCII constants
 NUL = 0x00
@@ -698,6 +699,8 @@ class Interface:
         """ Read the next valid message from the serial port.
         Parses and returns the destination address, command, and arguments as a
         tuple."""
+        global lastReadMsgTime
+        
         if self.port is None:
             self._open()  # Try and re-open port
 
@@ -745,6 +748,7 @@ class Interface:
             # Skip any NULs between messages
             while self.msg[0] == 0x00:
                 self.msg = self.msg[1:]
+            lastReadMsgTime = time.time()
             # Parse the elements of the message
             dlestx = self.msg[0:2]
             dest = self.msg[2:3]
@@ -770,6 +774,7 @@ class Interface:
 
     def sendMsg(self, dest, cmd, args):
         """ Send a message. """
+        global lastReadMsgTime
         msg = [DLE, STX, dest, cmd]
         msg += args
         msg += [self.checksum(msg), DLE, ETX]
@@ -782,8 +787,13 @@ class Interface:
                 toHex(msg[2:3]), toHex(msg[3:4]),
                 toHex(msg[4:-3]), toHex(msg[-3:-2]),
                 toHex(msg[-2:]))
+        now = time.time()
+        if ((now - lastReadMsgTime) < 0.004):
+            time.sleep(0.004 - (now - lastReadMsgTime))
         self.port.write(msg)
-
+        if debugData:
+            readToSendTime = time.time() - lastReadMsgTime
+            print ("readToSendTime = %f\n" % readToSendTime)
     def checksum(self, msg):
         """ Compute the checksum of a string of bytes."""
         return sum(msg) & 255
