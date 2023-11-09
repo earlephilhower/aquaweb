@@ -609,7 +609,7 @@ class Screen:
             # The PDA has a special (double-wide?) mode identified by the MSBs
             # Just move them to the top for now
             if line == 64:
-                line = 1   # Time (hex=40)
+                line = 0   # Time (hex=40)
             if line == 130:
                 line = 2  # Temp (hex=82)
             self.writeLine(line, text)
@@ -631,6 +631,7 @@ class PDA(Screen):
     """Emulates the new PDA-style remote control unit."""
     ID = 0x60
     ACK = 0x40
+    H = 10
 
     def __init__(self):
         """Set up the instance"""
