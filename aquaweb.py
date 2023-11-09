@@ -328,12 +328,12 @@ class MyServer(HTTPServer):
         return result
 
 webServer = None
-def startServer(screen, spa):
+def startServer(screen, spa, port):
     """HTTP Server implementation, to be in separate thread from main code."""
     global webServer
     try:
-        webServer = MyServer(('', PORT), webHandler)
-        print('Started httpserver on port', PORT)
+        webServer = MyServer(('', port), webHandler)
+        print('Started httpserver on port', port)
         # Wait forever for incoming http requests
         webServer.serve_forever(screen, spa)
     except KeyboardInterrupt:
@@ -826,6 +826,9 @@ def parseArgs():
     parser.add_argument("--aqualink", "-a", dest="aqualink", action='store_true',
                         help="Enable a AQUALINK emulator at http://localhost/", default=False,
                         required=False)
+    parser.add_argument("--port", "-P", dest="port", type=int, default=PORT,
+                        help="bind to http://localhost:port/ instead of default http port",
+                        required=False)
     args = parser.parse_args()
     if not os.path.exists(args.device):
         print("ERROR: Unable to open RS485 device: " + args.device + "\n")
@@ -877,8 +880,8 @@ def main():
         print("ERROR: Please specify one or more interfaces to emulate.")
         sys.exit(-1)
 
-    print("Creating web server...")
-    server = threading.Thread(target=startServer, args=(screen, spa))
+    print("Creating web server on port %d ..." % args.port)
+    server = threading.Thread(target=startServer, args=(screen, spa, args.port))
     server.start()
 
     print("Main loop begins...")
