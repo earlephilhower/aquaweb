@@ -9,6 +9,7 @@ Control Jandy Aqualink via a web interface from anywhere in the world
 * THIS MAY VOID YOUR POOL WARRANTY
 * I AM NOT ASSOCIATED WITH JANDY OR RELATED COMPANIES
 
+
 This Python script allows control of Jandy Aqualink pools with remotes
 via a web interface.  Your existing setup needs to already have the 
 new-style PDA, old-style square remote or SpaLink installed.
@@ -64,6 +65,15 @@ Some of the RS485 protocol routine was borrowed from
 and some code on the excellent Trouble Free Pool forums:
   http://www.troublefreepool.com/threads/27391-Control-your-Jandy-equipment-from-your-PC-with-a-15-adapter
 The PDA style codes were uncovered by @johnnytaco.
+
+# Raspberry Pi Pico-based Version
+Aquaweb-pico.ino is an Arduino sketch for [Arduino-Pico](https://github.com/earlephilhower/arduino-pico) which
+implements the same logic as the Python script, but runs on a $4 Rasperry Pi Pico RP2040-based device.  Combine
+it with a W5500 wired Ethernet module and a SP485 3.3V compliant UART-RS485 adapter, and it implements the
+same web interface as the Python version (only Square PDA for now, but trivial to add in Spalink and Modern PDA
+styles).  Use this to avoid any SD card issues common in the larger Raspberry Pi SBCs (or at least, common in
+the Pis and SD cards I have).
+
 
 -Earle F. Philhower, III
  earlephilhower@yahoo.com
