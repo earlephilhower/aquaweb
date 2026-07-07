@@ -11,8 +11,12 @@
 #include <HTTPUpdateServer.h>
 #include <W5500lwIP.h>
 
-// Configured exactly as in the WizNet W5500-EVB-Pico
+// Ensure OTA is possible, requires a FS
+static_assert(FS_END - FS_START > 1024*1023, "Need to define a filesystem of 1MB or greater");
+
+// Wired exactly as in the WizNet W5500-EVB-Pico
 Wiznet5500lwIP eth(17, SPI, 21);
+WiFiUDP udp;
 
 // MDNS hostname
 const char* hostname = "aquaweb-pico";
@@ -29,6 +33,9 @@ const uint8_t NUL = 0x00;
 const uint8_t DLE = 0x10;
 const uint8_t STX = 0x02;
 const uint8_t ETX = 0x03;
+
+// Last read byte time (to ensure turnaround time)
+uint32_t lastRead = 0;
 
 const char *javascript = R"EOF(
 if (window.XMLHttpRequest) {
@@ -58,7 +65,7 @@ function xmlhttpPost(xmlReq, strURL, params, update) {
         }
       }
     }
-    xmlReq.send();
+    //xmlReq.send();
 }
 
 function updatepage(str, div){
@@ -369,8 +376,11 @@ public:
     }
 
     void processMessage() {
-        delay(3); // Make sure we have receive to transmit turnaround time
-        
+        while (millis() - lastRead < 3) {
+          delayMicroseconds(10);
+        }
+        //delay(3); // Make sure we have receive to transmit turnaround time
+
         sendAck();
 
         if (msg.cmd == 0x09) { // Clear Screen
@@ -459,11 +469,20 @@ void processPacket() {
   msg.args.pop_back();
   if (checksum != msg.checksum()) {
     // Error, checksum failed
-    return;
+    //return;
   }
+
   if (msg.dest == screen.ID) {
     screen.processMessage();
   }
+#if 0
+udp.beginPacket(IPAddress(192,168,1,8), 9876);
+  udp.write(msg.dest);
+  udp.write(msg.cmd);
+  for (auto x: msg.args)
+    udp.write(x);
+  udp.endPacket();
+  #endif
 }
 
 
@@ -485,6 +504,7 @@ void loop1() {
       }
     } else {
       uint8_t x = Serial1.read(); // Guaranteed available
+      lastRead = millis();
       switch(state) {
       case WAITSTART:
         if (x == DLE) {
