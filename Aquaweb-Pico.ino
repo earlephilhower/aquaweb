@@ -13,11 +13,14 @@
 #include <WebSocketsServer.h>
 
 // Ensure OTA is possible, requires a FS
-static_assert(FS_END - FS_START > 1024*1023, "Need to define a filesystem of 1MB or greater");
+static_assert(FS_END - FS_START > 1024 * 1023, "Need to define a filesystem of 1MB or greater");
 
 // Wired exactly as in the WizNet W5500-EVB-Pico
 Wiznet5500lwIP eth(17, SPI, 21);
-//WiFiUDP udp;
+
+WebServer httpServer(80);
+HTTPUpdateServer httpUpdater;
+WebSocketsServer webSocket(81);
 
 // MDNS hostname
 const char* hostname = "aquaweb-pico";
@@ -38,71 +41,6 @@ const uint8_t ETX = 0x03;
 // Last read byte time (to ensure turnaround time)
 uint32_t lastRead = 0;
 
-#if 0
-
-const char *javascript = R"EOF(
-if (window.XMLHttpRequest) {
-    var xmlHttpReqKey = new XMLHttpRequest();
-    var xmlHttpReqScreen = new XMLHttpRequest();
-} else {
-    var xmlHttpReqKey = new ActiveXObject("Microsoft.XMLHTTP");
-    var xmlHttpReqScreen = new ActiveXObject("Microsoft.XMLHTTP");
-}
-
-function screen() {
-    xmlhttpPost(xmlHttpReqScreen, "/cgi/screen.cgi", "", "screen");
-}
-
-function sendkey(key) {
-    xmlhttpPost(xmlHttpReqKey, "/cgi/key.cgi", "key="+key);
-}
-
-function xmlhttpPost(xmlReq, strURL, params, update) {
-    xmlReq.open('POST', strURL, true);
-    xmlReq.setRequestHeader("Content-type","application/x-www-form-urlencoded");
-    xmlReq.send(params);
-    if (update != "") {
-      xmlReq.onreadystatechange = function() {
-        if (xmlReq.readyState == 4) {
-            //updatepage(xmlReq.responseText, update);
-        }
-      }
-    }
-    //xmlReq.send();
-}
-
-function updatepage(str, div){
-    document.getElementById(div).innerHTML = str;
-    setTimeout(window[div](), 250);
-}
-)EOF";
-
-const char *squarehtml = R"EOF(
-<html><head><title>Pool Controller</title>
-
-<script language="Javascript" src="/script.js"></script>
-
-</head>
-<body onload="screen();">
-<table>
-<tr>
-<td>
-<table><tr><td height="80px" align="right"><button onclick="sendkey('pgup');">Page Up</button></td></tr><tr><td align="right" height="80px"><button onclick="sendkey('back');">Back</button></td></tr><tr><td align="right" height="80px"><button onclick="sendkey('pgdn');">Page Down</button></td></tr></table>
-</td>
-<td>
-<font size="+2"><div id="screen"></div> </font>
-</td>
-<td>
-    <table><tr><td align="left" height="80px"><button onclick="sendkey('up');">Up</button></td></tr><tr><td align="left" height="80px"><button onclick="sendkey('down');">Down</button></td></tr></table>
-</td>
-</tr>
-<tr><td colspan="3" align="center"><button onclick="sendkey('select');">Select</button></td></tr>
-</table>
-</body>
-</html>
-)EOF";
-#endif
-
 const uint8_t favicon[] = {
   0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10, 0x02, 0x00, 0x01, 0x00,
   0x01, 0x00, 0xb0, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x28, 0x00,
@@ -122,10 +60,11 @@ const uint8_t favicon[] = {
   0x00, 0x00, 0xff, 0xcb, 0x00, 0x00, 0xff, 0xdf, 0x00, 0x00, 0xff, 0xff,
   0x00, 0x00, 0xff, 0xff, 0x00, 0x00
 };
-WebServer httpServer(80);
-HTTPUpdateServer httpUpdater;
-char logs[10000] = {};
 
+
+
+
+char logs[10000] = {};
 void log(const char *str) {
   if (strlen(logs) > 8000) logs[0] = 0;
   strcat(logs, str);
@@ -157,14 +96,14 @@ typedef enum {
 
 
 class Message {
-public:  
+  public:
     uint8_t dest;
     uint8_t cmd;
     std::vector<uint8_t> args;
     uint32_t lastTime;
     static constexpr size_t MAXARGS = 255;
     static constexpr uint32_t TIMEOUT = 1000; // 1 Second
-    
+
     Message() {
       args.reserve(MAXARGS + 1); // Larger than largest message
       clear();
@@ -173,7 +112,7 @@ public:
     bool timeout() {
       return (millis() - lastTime) > TIMEOUT;
     }
-    
+
     void clear() {
       dest = 0;
       cmd = 0;
@@ -186,7 +125,7 @@ public:
         clear();
         return false;
       }
-      
+
       args.push_back(c);
       lastTime = millis();
       return true;
@@ -198,7 +137,7 @@ public:
       c += 0x02; // STX
       c += dest;
       c += cmd;
-      for (auto x: args) {
+      for (auto x : args) {
         c += x;
       }
       return c;
@@ -228,18 +167,18 @@ Message msg;
 State state = WAITSTART;
 
 class Screen {
-public:
+  public:
     int W = 16;
     int H = 12;
     uint8_t ID = 0x40;
     uint8_t ACK = 0x8b;
 
     Screen() : dirty_(true), nextAck_(0x00) {
-        invert_.line = -1;
-        invert_.start = -1;
-        invert_.end = -1;
-        mutex_init(&_mutex);
-        begin();
+      invert_.line = -1;
+      invert_.start = -1;
+      invert_.end = -1;
+      mutex_init(&_mutex);
+      begin();
     }
 
     virtual ~Screen() {
@@ -267,69 +206,69 @@ public:
     }
 
     void cls() {
-        CoreMutex m(&_mutex);
-        for (int i = 0; i < H; ++i) {
-          memset(screen_[i], ' ', W);
-        }
-        invert_.line = -1;
-        dirty_ = true;
+      CoreMutex m(&_mutex);
+      for (int i = 0; i < H; ++i) {
+        memset(screen_[i], ' ', W);
+      }
+      invert_.line = -1;
+      dirty_ = true;
     }
 
     void scroll(int start, int end, int direction) {
-        CoreMutex m(&_mutex);
-        if (direction == 255) { // -1
-            for (int x = start; x < end; ++x) {
-              memcpy(screen_[x], screen_[x + 1], W);
-            }
-            memset(screen_[end], ' ', W);
-        } else if (direction == 1) { // +1
-            for (int x = end; x > start; --x) {
-              memcpy(screen_[x], screen_[x - 1], W);
-            }
-            memset(screen_[start], ' ', W);
+      CoreMutex m(&_mutex);
+      if (direction == 255) { // -1
+        for (int x = start; x < end; ++x) {
+          memcpy(screen_[x], screen_[x + 1], W);
         }
-        dirty_ = true;
+        memset(screen_[end], ' ', W);
+      } else if (direction == 1) { // +1
+        for (int x = end; x > start; --x) {
+          memcpy(screen_[x], screen_[x - 1], W);
+        }
+        memset(screen_[start], ' ', W);
+      }
+      dirty_ = true;
     }
 
     void writeLine(int line, const uint8_t *args, int len) {
-        CoreMutex m(&_mutex);
-        memset(screen_[line], ' ', W);
-        if (len > W) {
-          len = W;
-        }
-        memcpy(screen_[line], args, len);
-        dirty_ = true;
+      CoreMutex m(&_mutex);
+      memset(screen_[line], ' ', W);
+      if (len > W) {
+        len = W;
+      }
+      memcpy(screen_[line], args, len);
+      dirty_ = true;
     }
 
     void invertLine(int line) {
-        CoreMutex m(&_mutex);
-        invert_.line = line;
-        invert_.start = 0;
-        invert_.end = W;
-        dirty_ = true;
+      CoreMutex m(&_mutex);
+      invert_.line = line;
+      invert_.start = 0;
+      invert_.end = W;
+      dirty_ = true;
     }
 
     void invertChars(int line, int start, int end) {
-        CoreMutex m(&_mutex);
-        invert_.line = line;
-        invert_.start = start;
-        invert_.end = end;
-        char buff[100];
-        sprintf(buff, "invert line %d start %d end %d", line, start, end);
-        log(buff);
-        buff[0] = 0;
-        for (auto x: msg.args) {
-          char b[5];
-          sprintf(b, "%02x ",x);
-          strcat(buff, b);
-        }
-        log(buff);
-        dirty_ = true;
+      CoreMutex m(&_mutex);
+      invert_.line = line;
+      invert_.start = start;
+      invert_.end = end;
+      char buff[100];
+      sprintf(buff, "invert line %d start %d end %d", line, start, end);
+      log(buff);
+      buff[0] = 0;
+      for (auto x : msg.args) {
+        char b[5];
+        sprintf(b, "%02x ", x);
+        strcat(buff, b);
+      }
+      log(buff);
+      dirty_ = true;
     }
 
-  bool dirty() {
-    return dirty_;
-  }
+    bool dirty() {
+      return dirty_;
+    }
     String html(bool clear = false) {
       InvertState inv;
       // Work from a copy of screen so we don't lock out UART core too long
@@ -340,105 +279,111 @@ public:
         }
         inv = invert_;
       } while (0);
-        String ret = "<pre>";
-        for (int x = 0; x < H; ++x) {
-            if (x == inv.line) {
-                for (int y = 0; y < W; ++y) {
-                    if (y == inv.start) ret += "<span style=\"background-color: #FFFF00\"><b>";
-                    ret += (char) scratch_[x][y];
-                    if (y == inv.end) ret += "</b></span>";
-                }
-                if (inv.end >= W) ret += "</b></span>";
-                ret += "\n";
-            } else {
-              String line((const char *)scratch_[x], W);
-                ret += line + "\n";
-            }
+      String ret = "<pre>";
+      for (int x = 0; x < H; ++x) {
+        if (x == inv.line) {
+          for (int y = 0; y < W; ++y) {
+            if (y == inv.start) ret += "<span style=\"background-color: #FFFF00\"><b>";
+            ret += (char) scratch_[x][y];
+            if (y == inv.end) ret += "</b></span>";
+          }
+          if (inv.end >= W) ret += "</b></span>";
+          ret += "\n";
+        } else {
+          String line((const char *)scratch_[x], W);
+          ret += line + "\n";
         }
-        ret += "</pre>";
-        if (clear) {
-          dirty_ = false;
-        }
-        return ret;
+      }
+      ret += "</pre>";
+      if (clear) {
+        dirty_ = false;
+      }
+      return ret;
     }
 
     void sendAck() {
-        Message m;
-        m.dest = 0x00;
-        m.cmd = 0x01;
-        m.add(ACK);
-        m.add(nextAck_);
-        m.send();
-        nextAck_ = 0x00;
+      uint8_t thisAck;
+      do {
+        CoreMutex m(&_mutex);
+        thisAck = nextAck_;
+        nextAck_ = 0;
+      } while (0);
+
+      Message m;
+      m.dest = 0x00;
+      m.cmd = 0x01;
+      m.add(ACK);
+      m.add(thisAck);
+      m.send();
     }
 
     void setNextAck(uint8_t nextAck) {
-        nextAck_ = nextAck;
+      nextAck_ = nextAck;
     }
 
     void sendKey(const String &key) {
-        if (key == "up") setNextAck(0x06);
-        else if (key == "down") setNextAck(0x05);
-        else if (key == "back") setNextAck(0x02);
-        else if (key == "select") setNextAck(0x04);
-        else if (key == "pgup") setNextAck(0x01);
-        else if (key == "pgdn") setNextAck(0x03);
+      if (key == "up") setNextAck(0x06);
+      else if (key == "down") setNextAck(0x05);
+      else if (key == "back") setNextAck(0x02);
+      else if (key == "select") setNextAck(0x04);
+      else if (key == "pgup") setNextAck(0x01);
+      else if (key == "pgdn") setNextAck(0x03);
     }
 
     void processMessage() {
-        while (millis() - lastRead < 3) {
-          delayMicroseconds(10);
+      while (millis() - lastRead < 10) {
+        delayMicroseconds(10);
+      }
+      //delay(3); // Make sure we have receive to transmit turnaround time
+
+      sendAck();
+
+      if (msg.cmd == 0x09) { // Clear Screen
+        cls();
+      } else if (msg.cmd == 0x0f) { // Scroll Screen
+        if (msg.args.size() >= 3) {
+          int start = msg.args[0];
+          int end = msg.args[1];
+          int direction = msg.args[2];
+          scroll(start, end, direction);
         }
-        //delay(3); // Make sure we have receive to transmit turnaround time
+      } else if (msg.cmd == 0x04) { // Write a line
+        if (!msg.args.empty()) {
+          int line = msg.args[0];
+          size_t offset = 1;
+          uint8_t text[W];
+          memset(text, ' ', W);
+          //String text = "";
+          while (offset < msg.args.size() && msg.args[offset] != 0) {
+            text[offset - 1] = msg.args[offset]; // += static_cast<char>(msg.args[offset]);
+            ++offset;
+          }
 
-        sendAck();
+          if (line == 64) line = 0;    // Time (0x40)
+          if (line == 130) line = 2;   // Temp (0x82)
 
-        if (msg.cmd == 0x09) { // Clear Screen
-            cls();
-        } else if (msg.cmd == 0x0f) { // Scroll Screen
-            if (msg.args.size() >= 3) {
-                int start = msg.args[0];
-                int end = msg.args[1];
-                int direction = msg.args[2];
-                scroll(start, end, direction);
-            }
-        } else if (msg.cmd == 0x04) { // Write a line
-            if (!msg.args.empty()) {
-                int line = msg.args[0];
-                size_t offset = 1;
-                uint8_t text[W];
-                memset(text, ' ', W);
-                //String text = "";
-                while (offset < msg.args.size() && msg.args[offset] != 0) {
-                    text[offset-1] = msg.args[offset];// += static_cast<char>(msg.args[offset]);
-                    ++offset;
-                }
-
-                if (line == 64) line = 0;    // Time (0x40)
-                if (line == 130) line = 2;   // Temp (0x82)
-
-                writeLine(line, text, W);
-            }
-        } else if (msg.cmd == 0x05) {
-            // Initial handshake? no-op
-        } else if (msg.cmd == 0x00) {
-            // PROBE no-op
-        } else if (msg.cmd == 0x02) {
-            //setStatus(toHex(ret.args));
-        } else if (msg.cmd == 0x08) {
-            if (!msg.args.empty()) invertLine(msg.args[0]);
-        } else if (msg.cmd == 0x10) {
-            if (msg.args.size() > 3) invertChars(msg.args[0], msg.args[1], msg.args[2]);
-        } else {
-          // Unknown
+          writeLine(line, text, W);
         }
+      } else if (msg.cmd == 0x05) {
+        // Initial handshake? no-op
+      } else if (msg.cmd == 0x00) {
+        // PROBE no-op
+      } else if (msg.cmd == 0x02) {
+        //setStatus(toHex(ret.args));
+      } else if (msg.cmd == 0x08) {
+        if (!msg.args.empty()) invertLine(msg.args[0]);
+      } else if (msg.cmd == 0x10) {
+        if (msg.args.size() > 3) invertChars(msg.args[0], msg.args[1], msg.args[2]);
+      } else {
+        // Unknown
+      }
     }
 
-protected:
+  protected:
     struct InvertState {
-        int8_t line;
-        int8_t start;
-        int8_t end;
+      int8_t line;
+      int8_t start;
+      int8_t end;
     };
 
     bool dirty_;
@@ -469,7 +414,7 @@ void handleKey() {
 }
 
 void handleScreen() {
-   httpServer.send(200, "text/html", screen.html());
+  httpServer.send(200, "text/html", screen.html());
 }
 
 
@@ -485,14 +430,7 @@ void processPacket() {
   if (msg.dest == screen.ID) {
     screen.processMessage();
   }
-#if 0
-udp.beginPacket(IPAddress(192,168,1,8), 9876);
-  udp.write(msg.dest);
-  udp.write(msg.cmd);
-  for (auto x: msg.args)
-    udp.write(x);
-  udp.endPacket();
-  #endif
+
 }
 
 
@@ -507,21 +445,21 @@ void setup1() {
 
 
 void loop1() {
-    if (!Serial1.available()) {
-      if (msg.timeout()) {
-        msg.clear();
-        state = WAITSTART;
-      }
-    } else {
-      uint8_t x = Serial1.read(); // Guaranteed available
-      lastRead = millis();
-      switch(state) {
+  if (!Serial1.available()) {
+    if (msg.timeout()) {
+      msg.clear();
+      state = WAITSTART;
+    }
+  } else {
+    uint8_t x = Serial1.read(); // Guaranteed available
+    lastRead = millis();
+    switch (state) {
       case WAITSTART:
         if (x == DLE) {
           state = WAITSTX;
         }
         break;
-        
+
       case WAITSTX:
         if (x == STX) {
           state = DEST;
@@ -530,31 +468,31 @@ void loop1() {
         } else {
           // error
           state = WAITSTART;
-          msg.clear(); 
+          msg.clear();
         }
         break;
-        
+
       case DEST:
-        
-          msg.dest = x;
-          state = CMD;
-       
+
+        msg.dest = x;
+        state = CMD;
+
         break;
-        
+
       case CMD:
-          msg.cmd = x;
-          if (msg.cmd == DLE) {
-            // When DLE is in the message or data, the central will add a 0 after it
-            state = SKIP0;
-          } else {
-            state = ARGS;
-          }
-          break;
-        
+        msg.cmd = x;
+        if (msg.cmd == DLE) {
+          // When DLE is in the message or data, the central will add a 0 after it
+          state = SKIP0;
+        } else {
+          state = ARGS;
+        }
+        break;
+
       case SKIP0:
         state = ARGS;
         break;
-        
+
       case ARGS:
         if (x == DLE) {
           state = WAITETX;
@@ -564,7 +502,7 @@ void loop1() {
           msg.clear();
         }
         break;
-        
+
       case WAITETX:
         if (x == ETX) {
           // Success
@@ -580,13 +518,13 @@ void loop1() {
         }
         break;
     }
-    }
+  }
 }
 
 
 void connectOrReboot() {
   eth.end();
-  
+
   // Start the Ethernet port
   if (!eth.begin()) {
     Serial.println("No wired Ethernet hardware detected. Check pinouts, wiring.");
@@ -639,7 +577,6 @@ function sendkey(k) { connection.send(k); }
 </html>
 )EOF";
 
-WebSocketsServer webSocket = WebSocketsServer(81);
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
 char key[32];
@@ -690,15 +627,9 @@ void setup() {
     
   httpUpdater.setup(&httpServer);
   httpServer.on("/favicon.ico", []() { httpServer.send(200, "image/x-icon", (const char *)favicon, sizeof(favicon)); });
-//  httpServer.on("/index.html", []() { httpServer.send(200, "text/html", squarehtml); });
-  //httpServer.on("/script.js", []() { httpServer.send(200, "text/javascript", javascript); });
-//  httpServer.on("/", []() { httpServer.send(200, "text/html", squarehtml); });
   httpServer.on("/log", []() { httpServer.send(200, "text/plain", logs); logs[0] = 0; });
   httpServer.on("/reboot", []() { httpServer.send(200, "text/plain", "Rebooting"); delay(1000); rp2040.reboot(); });
-//  httpServer.on("/cgi/key.cgi", HTTP_POST, handleKey);
-//  httpServer.on("/cgi/screen.cgi", handleScreen);
   httpServer.on("/uptime", []() { char buff[100]; sprintf(buff, "Uptime(ms): %llu\nFree Heap(): %d", rp2040.getCycleCount64() / F_CPU, rp2040.getFreeHeap()); httpServer.send(200, "text/plain", buff); });
-
   httpServer.on("/", []() { httpServer.send(200, "text/html", SCREENWS); });
 
 
