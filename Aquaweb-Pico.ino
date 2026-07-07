@@ -10,13 +10,14 @@
 #include <SimpleMDNS.h>
 #include <HTTPUpdateServer.h>
 #include <W5500lwIP.h>
+#include <WebSocketsServer.h>
 
 // Ensure OTA is possible, requires a FS
 static_assert(FS_END - FS_START > 1024*1023, "Need to define a filesystem of 1MB or greater");
 
 // Wired exactly as in the WizNet W5500-EVB-Pico
 Wiznet5500lwIP eth(17, SPI, 21);
-WiFiUDP udp;
+//WiFiUDP udp;
 
 // MDNS hostname
 const char* hostname = "aquaweb-pico";
@@ -36,6 +37,8 @@ const uint8_t ETX = 0x03;
 
 // Last read byte time (to ensure turnaround time)
 uint32_t lastRead = 0;
+
+#if 0
 
 const char *javascript = R"EOF(
 if (window.XMLHttpRequest) {
@@ -61,7 +64,7 @@ function xmlhttpPost(xmlReq, strURL, params, update) {
     if (update != "") {
       xmlReq.onreadystatechange = function() {
         if (xmlReq.readyState == 4) {
-            updatepage(xmlReq.responseText, update);
+            //updatepage(xmlReq.responseText, update);
         }
       }
     }
@@ -98,6 +101,7 @@ const char *squarehtml = R"EOF(
 </body>
 </html>
 )EOF";
+#endif
 
 const uint8_t favicon[] = {
   0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10, 0x02, 0x00, 0x01, 0x00,
@@ -323,7 +327,10 @@ public:
         dirty_ = true;
     }
 
-    String html() {
+  bool dirty() {
+    return dirty_;
+  }
+    String html(bool clear = false) {
       InvertState inv;
       // Work from a copy of screen so we don't lock out UART core too long
       do {
@@ -349,6 +356,9 @@ public:
             }
         }
         ret += "</pre>";
+        if (clear) {
+          dirty_ = false;
+        }
         return ret;
     }
 
@@ -469,7 +479,7 @@ void processPacket() {
   msg.args.pop_back();
   if (checksum != msg.checksum()) {
     // Error, checksum failed
-    //return;
+    return;
   }
 
   if (msg.dest == screen.ID) {
@@ -596,6 +606,71 @@ void connectOrReboot() {
   }
 }
 
+const char *SCREENWS = R"EOF(
+<!doctype html>
+<html>
+<head>
+<title>Pool Controller</title>
+<script language="Javascript">
+var connection = new WebSocket('ws://'+location.hostname+':81/', ['arduino']);
+connection.onopen = function () {  connection.send('Connect ' + new Date()); };
+connection.onerror = function (error) {    console.log('WebSocket Error ', error);};
+connection.onmessage = function (e) { document.getElementById("screen").innerHTML = e.data; };
+function sendkey(k) { connection.send(k); }
+</script>
+</head>
+<body>
+
+<table>
+<tr>
+<td>
+<table><tr><td height="80px" align="right"><button onclick="sendkey('pgup');">Page Up</button></td></tr><tr><td align="right" height="80px"><button onclick="sendkey('back');">Back</button></td></tr><tr><td align="right" height="80px"><button onclick="sendkey('pgdn');">Page Down</button></td></tr></table>
+</td>
+<td>
+<font size="+2"><div id="screen"></div> </font>
+</td>
+<td>
+    <table><tr><td align="left" height="80px"><button onclick="sendkey('up');">Up</button></td></tr><tr><td align="left" height="80px"><button onclick="sendkey('down');">Down</button></td></tr></table>
+</td>
+</tr>
+<tr><td colspan="3" align="center"><button onclick="sendkey('select');">Select</button></td></tr>
+</table>
+</body>
+</html>
+)EOF";
+
+WebSocketsServer webSocket = WebSocketsServer(81);
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+char key[32];
+        size_t len;
+        
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("[%u] Disconnected!\n", num);
+            break;
+        case WStype_CONNECTED:
+            {
+                IPAddress ip = webSocket.remoteIP(num);
+                Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+        
+        // send message to client
+              String s = screen.html(false);
+        webSocket.sendTXT(num, s);
+            }
+            break;
+        case WStype_TEXT:
+        len = std::min(length, sizeof(key) - 1);
+        memcpy(key, payload, len);
+        key[len] = 0;
+        screen.sendKey(key);
+        break;
+        default:
+        /*noop*/
+        break;
+    }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println();
@@ -611,17 +686,24 @@ void setup() {
 
   MDNS.begin(hostname);
   MDNS.addService("http", "tcp", 80);
-
+  MDNS.addService("ws", "tcp", 81);
+    
   httpUpdater.setup(&httpServer);
   httpServer.on("/favicon.ico", []() { httpServer.send(200, "image/x-icon", (const char *)favicon, sizeof(favicon)); });
-  httpServer.on("/index.html", []() { httpServer.send(200, "text/html", squarehtml); });
-  httpServer.on("/script.js", []() { httpServer.send(200, "text/javascript", javascript); });
-  httpServer.on("/", []() { httpServer.send(200, "text/html", squarehtml); });
+//  httpServer.on("/index.html", []() { httpServer.send(200, "text/html", squarehtml); });
+  //httpServer.on("/script.js", []() { httpServer.send(200, "text/javascript", javascript); });
+//  httpServer.on("/", []() { httpServer.send(200, "text/html", squarehtml); });
   httpServer.on("/log", []() { httpServer.send(200, "text/plain", logs); logs[0] = 0; });
   httpServer.on("/reboot", []() { httpServer.send(200, "text/plain", "Rebooting"); delay(1000); rp2040.reboot(); });
-  httpServer.on("/cgi/key.cgi", HTTP_POST, handleKey);
-  httpServer.on("/cgi/screen.cgi", handleScreen);
-  httpServer.on("/uptime", []() { char buff[16]; sprintf(buff, "%llu", rp2040.getCycleCount64() / F_CPU); httpServer.send(200, "text/plain", buff); });
+//  httpServer.on("/cgi/key.cgi", HTTP_POST, handleKey);
+//  httpServer.on("/cgi/screen.cgi", handleScreen);
+  httpServer.on("/uptime", []() { char buff[100]; sprintf(buff, "Uptime(ms): %llu\nFree Heap(): %d", rp2040.getCycleCount64() / F_CPU, rp2040.getFreeHeap()); httpServer.send(200, "text/plain", buff); });
+
+  httpServer.on("/", []() { httpServer.send(200, "text/html", SCREENWS); });
+
+
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
   
   httpServer.begin();
 
@@ -632,6 +714,11 @@ void loop() {
   if (eth.connected()) {
     httpServer.handleClient();
     MDNS.update();
+    webSocket.loop();
+    if (screen.dirty()) {
+      String s = screen.html(true);
+      webSocket.broadcastTXT(s);
+    }
   } else {
     connectOrReboot();
   }
