@@ -494,7 +494,7 @@ void loop1() {
         break;
 
       case ARGS:
-        if (x == DLE) {
+       if (x == DLE) {
           state = WAITETX;
         } else if (!msg.add(x)) {
           // Weird overflow, toss
@@ -504,7 +504,10 @@ void loop1() {
         break;
 
       case WAITETX:
-        if (x == ETX) {
+        if (x == 0) {
+          msg.add(DLE);
+        state = CMD; // This was an escaped 0x10, not a DLE
+      } else if (x == ETX) {
           // Success
           processPacket();
           state = WAITSTART;
