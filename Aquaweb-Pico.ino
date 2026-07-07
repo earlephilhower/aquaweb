@@ -66,13 +66,17 @@ const uint8_t favicon[] = {
 
 char logs[10000] = {};
 void log(const char *str) {
-  if (strlen(logs) > 8000) logs[0] = 0;
+  if (strlen(logs) > 8000) {
+    logs[0] = 0;
+  }
   strcat(logs, str);
   strcat(logs, "\n");
 }
 
 void logHex(const uint8_t *data, int len, const char *prefix = "") {
-  if (strlen(logs) > 8000) logs[0] = 0;
+  if (strlen(logs) > 8000) {
+    logs[0] = 0;
+  }
   char buff[len * 2 + 4];
   char cx[3];
   buff[0] = 0;
@@ -88,10 +92,6 @@ void logHex(const uint8_t *data, int len, const char *prefix = "") {
 
 // All UART handling on the 2nd core since it is a little time critical.  We paid for the core, why not use it?
 
-
-typedef enum {
-  WAITSTART = 0, WAITSTX, DEST, CMD, SKIP0, ARGS, WAITETX
-} State;
 
 
 
@@ -164,7 +164,6 @@ class Message {
 
 
 Message msg;
-State state = WAITSTART;
 
 class Screen {
   public:
@@ -253,16 +252,6 @@ class Screen {
       invert_.line = line;
       invert_.start = start;
       invert_.end = end;
-      char buff[100];
-      sprintf(buff, "invert line %d start %d end %d", line, start, end);
-      log(buff);
-      buff[0] = 0;
-      for (auto x : msg.args) {
-        char b[5];
-        sprintf(b, "%02x ", x);
-        strcat(buff, b);
-      }
-      log(buff);
       dirty_ = true;
     }
 
@@ -283,11 +272,17 @@ class Screen {
       for (int x = 0; x < H; ++x) {
         if (x == inv.line) {
           for (int y = 0; y < W; ++y) {
-            if (y == inv.start) ret += "<span style=\"background-color: #FFFF00\"><b>";
+            if (y == inv.start) {
+              ret += "<span style=\"background-color: #FFFF00\"><b>";
+            }
             ret += (char) scratch_[x][y];
-            if (y == inv.end) ret += "</b></span>";
+            if (y == inv.end) {
+              ret += "</b></span>";
+            }
           }
-          if (inv.end >= W) ret += "</b></span>";
+          if (inv.end >= W) {
+            ret += "</b></span>";
+          }
           ret += "\n";
         } else {
           String line((const char *)scratch_[x], W);
@@ -322,19 +317,26 @@ class Screen {
     }
 
     void sendKey(const String &key) {
-      if (key == "up") setNextAck(0x06);
-      else if (key == "down") setNextAck(0x05);
-      else if (key == "back") setNextAck(0x02);
-      else if (key == "select") setNextAck(0x04);
-      else if (key == "pgup") setNextAck(0x01);
-      else if (key == "pgdn") setNextAck(0x03);
+      if (key == "up") {
+        setNextAck(0x06);
+      } else if (key == "down") {
+        setNextAck(0x05);
+      } else if (key == "back") {
+        setNextAck(0x02);
+      } else if (key == "select") {
+        setNextAck(0x04);
+      } else if (key == "pgup") {
+        setNextAck(0x01);
+      } else if (key == "pgdn") {
+        setNextAck(0x03);
+      }
     }
 
     void processMessage() {
+      // Ensure we have some delay for turnaround time on the RS485 bus
       while (millis() - lastRead < 10) {
         delayMicroseconds(10);
       }
-      //delay(3); // Make sure we have receive to transmit turnaround time
 
       sendAck();
 
@@ -359,8 +361,12 @@ class Screen {
             ++offset;
           }
 
-          if (line == 64) line = 0;    // Time (0x40)
-          if (line == 130) line = 2;   // Temp (0x82)
+          if (line == 64) {
+            line = 0;  // Time (0x40)
+          }
+          if (line == 130) {
+            line = 2;  // Temp (0x82)
+          }
 
           writeLine(line, text, W);
         }
@@ -371,9 +377,13 @@ class Screen {
       } else if (msg.cmd == 0x02) {
         //setStatus(toHex(ret.args));
       } else if (msg.cmd == 0x08) {
-        if (!msg.args.empty()) invertLine(msg.args[0]);
+        if (!msg.args.empty()) {
+          invertLine(msg.args[0]);
+        }
       } else if (msg.cmd == 0x10) {
-        if (msg.args.size() > 3) invertChars(msg.args[0], msg.args[1], msg.args[2]);
+        if (msg.args.size() > 3) {
+          invertChars(msg.args[0], msg.args[1], msg.args[2]);
+        }
       } else {
         // Unknown
       }
@@ -444,6 +454,13 @@ void setup1() {
 }
 
 
+// State machine
+typedef enum {
+  WAITSTART = 0, WAITSTX, DEST, CMD, SKIP0, ARGS, WAITETX
+} State;
+State state = WAITSTART;
+
+
 void loop1() {
   if (!Serial1.available()) {
     if (msg.timeout()) {
@@ -473,10 +490,8 @@ void loop1() {
         break;
 
       case DEST:
-
         msg.dest = x;
         state = CMD;
-
         break;
 
       case CMD:
@@ -494,7 +509,7 @@ void loop1() {
         break;
 
       case ARGS:
-       if (x == DLE) {
+        if (x == DLE) {
           state = WAITETX;
         } else if (!msg.add(x)) {
           // Weird overflow, toss
@@ -506,8 +521,8 @@ void loop1() {
       case WAITETX:
         if (x == 0) {
           msg.add(DLE);
-        state = CMD; // This was an escaped 0x10, not a DLE
-      } else if (x == ETX) {
+          state = CMD; // This was an escaped 0x10, not a DLE
+        } else if (x == ETX) {
           // Success
           processPacket();
           state = WAITSTART;
@@ -547,6 +562,36 @@ void connectOrReboot() {
   }
 }
 
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+  char key[32];
+  size_t len;
+  IPAddress ip;
+  String s;
+  
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.printf("[%u] Disconnected!\n", num);
+      break;
+    case WStype_CONNECTED:
+      ip = webSocket.remoteIP(num);
+      Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+      // Send initial screen, but don't mark it clean
+      s = screen.html(false);
+      webSocket.sendTXT(num, s);
+      break;
+    case WStype_TEXT:
+      len = std::min(length, sizeof(key) - 1);
+      memcpy(key, payload, len);
+      key[len] = 0;
+      screen.sendKey(key);
+      break;
+    default:
+      /*noop*/
+      break;
+  }
+}
+
 const char *SCREENWS = R"EOF(
 <!doctype html>
 <html>
@@ -554,10 +599,10 @@ const char *SCREENWS = R"EOF(
 <title>Pool Controller</title>
 <script language="Javascript">
 var connection = new WebSocket('ws://'+location.hostname+':81/', ['arduino']);
-connection.onopen = function () {  connection.send('Connect ' + new Date()); };
-connection.onerror = function (error) {    console.log('WebSocket Error ', error);};
+connection.onopen = function () { connection.send('Connect ' + new Date()); };
+connection.onerror = function (error) { console.log('WebSocket Error ', error);};
 connection.onmessage = function (e) { document.getElementById("screen").innerHTML = e.data; };
-function sendkey(k) { connection.send(k); }
+function sendkey(k) { connection.send(k); };
 </script>
 </head>
 <body>
@@ -580,37 +625,6 @@ function sendkey(k) { connection.send(k); }
 </html>
 )EOF";
 
-
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-char key[32];
-        size_t len;
-        
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.printf("[%u] Disconnected!\n", num);
-            break;
-        case WStype_CONNECTED:
-            {
-                IPAddress ip = webSocket.remoteIP(num);
-                Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-        
-        // send message to client
-              String s = screen.html(false);
-        webSocket.sendTXT(num, s);
-            }
-            break;
-        case WStype_TEXT:
-        len = std::min(length, sizeof(key) - 1);
-        memcpy(key, payload, len);
-        key[len] = 0;
-        screen.sendKey(key);
-        break;
-        default:
-        /*noop*/
-        break;
-    }
-}
-
 void setup() {
   Serial.begin(115200);
   Serial.println();
@@ -627,19 +641,17 @@ void setup() {
   MDNS.begin(hostname);
   MDNS.addService("http", "tcp", 80);
   MDNS.addService("ws", "tcp", 81);
-    
+
   httpUpdater.setup(&httpServer);
   httpServer.on("/favicon.ico", []() { httpServer.send(200, "image/x-icon", (const char *)favicon, sizeof(favicon)); });
   httpServer.on("/log", []() { httpServer.send(200, "text/plain", logs); logs[0] = 0; });
   httpServer.on("/reboot", []() { httpServer.send(200, "text/plain", "Rebooting"); delay(1000); rp2040.reboot(); });
   httpServer.on("/uptime", []() { char buff[100]; sprintf(buff, "Uptime(ms): %llu\nFree Heap(): %d", rp2040.getCycleCount64() / F_CPU, rp2040.getFreeHeap()); httpServer.send(200, "text/plain", buff); });
   httpServer.on("/", []() { httpServer.send(200, "text/html", SCREENWS); });
-
-
-    webSocket.begin();
-    webSocket.onEvent(webSocketEvent);
-  
   httpServer.begin();
+
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
 
   NTP.begin("pool.ntp.org", "time.nist.gov");
 }
