@@ -22,6 +22,16 @@ WebServer httpServer(80);
 HTTPUpdateServer httpUpdater;
 WebSocketsServer webSocket(81);
 
+// Raw data stream, ping pong buffer to avoid long locking
+WebSocketsServer rawSocket(82);
+constexpr size_t RAWMAX = 1024;
+std::vector<uint8_t> rawData[2];
+mutex_t rawMutex;
+bool rawReady = false;
+std::vector<uint8_t> *rawWriter;
+std::vector<uint8_t> *rawReader;
+uint8_t rawBuffer[RAWMAX + 1];
+
 // MDNS hostname
 const char* hostname = "aquaweb-pico";
 
@@ -167,8 +177,8 @@ Message msg;
 
 class Screen {
   public:
-    int W = 16;
-    int H = 12;
+    size_t W = 16;
+    size_t H = 12;
     uint8_t ID = 0x40;
     uint8_t ACK = 0x8b;
 
@@ -194,7 +204,7 @@ class Screen {
     }
 
     void begin() {
-      for (int i = 0; i < H; i++) {
+      for (size_t i = 0; i < H; i++) {
         uint8_t *line = (uint8_t *)malloc(W);
         memset(line, ' ', W);
         screen_.push_back(line);
@@ -206,22 +216,22 @@ class Screen {
 
     void cls() {
       CoreMutex m(&_mutex);
-      for (int i = 0; i < H; ++i) {
+      for (size_t i = 0; i < H; ++i) {
         memset(screen_[i], ' ', W);
       }
       invert_.line = -1;
       dirty_ = true;
     }
 
-    void scroll(int start, int end, int direction) {
+    void scroll(size_t start, size_t end, int direction) {
       CoreMutex m(&_mutex);
       if (direction == 255) { // -1
-        for (int x = start; x < end; ++x) {
+        for (size_t x = start; x < end; ++x) {
           memcpy(screen_[x], screen_[x + 1], W);
         }
         memset(screen_[end], ' ', W);
       } else if (direction == 1) { // +1
-        for (int x = end; x > start; --x) {
+        for (size_t x = end; x > start; --x) {
           memcpy(screen_[x], screen_[x - 1], W);
         }
         memset(screen_[start], ' ', W);
@@ -229,7 +239,7 @@ class Screen {
       dirty_ = true;
     }
 
-    void writeLine(int line, const uint8_t *args, int len) {
+    void writeLine(size_t line, const uint8_t *args, size_t len) {
       CoreMutex m(&_mutex);
       memset(screen_[line], ' ', W);
       if (len > W) {
@@ -239,7 +249,7 @@ class Screen {
       dirty_ = true;
     }
 
-    void invertLine(int line) {
+    void invertLine(size_t line) {
       CoreMutex m(&_mutex);
       invert_.line = line;
       invert_.start = 0;
@@ -247,7 +257,7 @@ class Screen {
       dirty_ = true;
     }
 
-    void invertChars(int line, int start, int end) {
+    void invertChars(size_t line, size_t start, size_t end) {
       CoreMutex m(&_mutex);
       invert_.line = line;
       invert_.start = start;
@@ -258,20 +268,23 @@ class Screen {
     bool dirty() {
       return dirty_;
     }
+
     String html(bool clear = false) {
       InvertState inv;
       // Work from a copy of screen so we don't lock out UART core too long
       do {
         CoreMutex m(&_mutex);
-        for (int i = 0; i < H; i++) {
+        noInterrupts();
+        for (size_t i = 0; i < H; i++) {
           memcpy(scratch_[i], screen_[i], W);
         }
         inv = invert_;
+        interrupts();
       } while (0);
       String ret = "<pre>";
-      for (int x = 0; x < H; ++x) {
+      for (size_t x = 0; x < H; ++x) {
         if (x == inv.line) {
-          for (int y = 0; y < W; ++y) {
+          for (size_t y = 0; y < W; ++y) {
             if (y == inv.start) {
               ret += "<span style=\"background-color: #FFFF00\"><b>";
             }
@@ -355,8 +368,7 @@ class Screen {
           size_t offset = 1;
           uint8_t text[W];
           memset(text, ' ', W);
-          //String text = "";
-          while (offset < msg.args.size() && msg.args[offset] != 0) {
+          while ((offset < msg.args.size()) && (msg.args[offset] != 0) && (offset < W + 1)) {
             text[offset - 1] = msg.args[offset]; // += static_cast<char>(msg.args[offset]);
             ++offset;
           }
@@ -391,9 +403,9 @@ class Screen {
 
   protected:
     struct InvertState {
-      int8_t line;
-      int8_t start;
-      int8_t end;
+      size_t line;
+      size_t start;
+      size_t end;
     };
 
     bool dirty_;
@@ -446,6 +458,14 @@ void processPacket() {
 
 
 void setup1() {
+  mutex_init(&rawMutex);
+  do {
+    CoreMutex m(&rawMutex); // Lock it
+    rawData[0].reserve(RAWMAX + 1);
+    rawData[1].reserve(RAWMAX + 1);
+    rawWriter = &rawData[0];
+    rawReader = &rawData[1];
+  } while (0);
   Serial1.setRX(rx);
   Serial1.setTX(tx);
   pinMode(rts, OUTPUT);
@@ -466,10 +486,22 @@ void loop1() {
     if (msg.timeout()) {
       msg.clear();
       state = WAITSTART;
+      log("timeout");
     }
   } else {
     uint8_t x = Serial1.read(); // Guaranteed available
     lastRead = millis();
+    do {
+      CoreMutex m(&rawMutex);
+      if (rawWriter->size() == RAWMAX) {
+        auto a = rawWriter;
+        rawWriter = rawReader;
+        rawReader = a;
+        rawWriter->clear();
+      }
+      rawWriter->push_back(x);
+      rawReady = true;
+    } while (0);
     switch (state) {
       case WAITSTART:
         if (x == DLE) {
@@ -521,7 +553,7 @@ void loop1() {
       case WAITETX:
         if (x == 0) {
           msg.add(DLE);
-          state = CMD; // This was an escaped 0x10, not a DLE
+          state = ARGS; // This was an escaped 0x10, not a DLE
         } else if (x == ETX) {
           // Success
           processPacket();
@@ -602,6 +634,7 @@ var connection = new WebSocket('ws://'+location.hostname+':81/', ['arduino']);
 connection.onopen = function () { connection.send('Connect ' + new Date()); };
 connection.onerror = function (error) { console.log('WebSocket Error ', error);};
 connection.onmessage = function (e) { document.getElementById("screen").innerHTML = e.data; };
+connection.onclose = function () { document.getElementById("screen").innerHTML = "<pre>DISCONNECTED</pre>"; };
 function sendkey(k) { connection.send(k); };
 </script>
 </head>
@@ -625,6 +658,7 @@ function sendkey(k) { connection.send(k); };
 </html>
 )EOF";
 
+
 void setup() {
   Serial.begin(115200);
   Serial.println();
@@ -646,12 +680,14 @@ void setup() {
   httpServer.on("/favicon.ico", []() { httpServer.send(200, "image/x-icon", (const char *)favicon, sizeof(favicon)); });
   httpServer.on("/log", []() { httpServer.send(200, "text/plain", logs); logs[0] = 0; });
   httpServer.on("/reboot", []() { httpServer.send(200, "text/plain", "Rebooting"); delay(1000); rp2040.reboot(); });
-  httpServer.on("/uptime", []() { char buff[100]; sprintf(buff, "Uptime(ms): %llu\nFree Heap(): %d", rp2040.getCycleCount64() / F_CPU, rp2040.getFreeHeap()); httpServer.send(200, "text/plain", buff); });
+  httpServer.on("/status", []() { char buff[100]; sprintf(buff, "Uptime(ms): %llu\nFree Heap (bytes): %d\nTemp (C): %0.2f", rp2040.getCycleCount64() / F_CPU, rp2040.getFreeHeap(), analogReadTemp()); httpServer.send(200, "text/plain", buff); });
   httpServer.on("/", []() { httpServer.send(200, "text/html", SCREENWS); });
   httpServer.begin();
 
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
+
+  rawSocket.begin();
 
   NTP.begin("pool.ntp.org", "time.nist.gov");
 }
@@ -661,9 +697,28 @@ void loop() {
     httpServer.handleClient();
     MDNS.update();
     webSocket.loop();
+    rawSocket.loop();
+
     if (screen.dirty()) {
       String s = screen.html(true);
       webSocket.broadcastTXT(s);
+    }
+
+    if (rawReady) {
+      size_t sz;
+      do {
+        CoreMutex m(&rawMutex);
+        noInterrupts();
+        memcpy(rawBuffer, rawReader->data(), rawReader->size());
+        rawReady = false;
+        sz = rawReader->size();
+        rawReader->clear();
+        interrupts();
+      } while (0);
+
+      if (sz) {
+        rawSocket.broadcastBIN(rawBuffer, sz);
+      }
     }
   } else {
     connectOrReboot();
